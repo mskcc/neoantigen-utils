@@ -14,7 +14,7 @@ import pytest
 
 # The package imports cleanly without mutalyzer (it is container-provided and
 # imported tolerantly); tests monkeypatch ``gmf.normalize`` where needed.
-from generatemutfasta import generate_mut_fasta as gmf
+from neoantigen_utils import generate_mut_fasta as gmf
 
 
 # ---------------------------------------------------------------------------
