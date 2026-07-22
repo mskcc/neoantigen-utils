@@ -1,14 +1,13 @@
-# generatemutfasta
+# neoantigen-utils
 
-Construct mutated peptide FASTAs from a MAF for neoantigen prediction, including
-**alternate (non-canonical) transcripts** via Genome Nexus' `Additional_Transcripts`
-column.
+Helper scripts for the MSK neoantigen pipeline, extracted from the Nextflow
+module so the logic can be versioned, unit-tested, and released independently.
 
-Extracted from the `mskcc-omics-workflows` neoantigen pipeline so the logic can
-be versioned, unit-tested, and released independently of the Nextflow module.
+Two tools (each installs as its original console command):
 
-## What it does
-
+### `generateMutFasta.py`
+Construct mutated peptide FASTAs from a MAF, including **alternate (non-canonical)
+transcripts** via Genome Nexus' `Additional_Transcripts` column.
 - Builds WT/MT peptide windows for each mutation from its HGVSc via Mutalyzer.
 - **Multi-transcript mode** (`--multi_transcript`): additionally builds peptides
   for the alternate transcripts Genome Nexus reports in the MAF
@@ -19,6 +18,13 @@ be versioned, unit-tested, and released independently of the Nextflow module.
   for offline (no-network) cache resolution; missing protein consequences are
   skipped instead of crashing.
 
+### `generate_input.py`
+Builds the neoantigen input JSON (summary/mutation) and NMD annotation from a MAF.
+Includes a corrected **NMDetective-B** (Lindeboom et al. 2019) implementation:
+spliced/CDS-coordinate, strand-aware PTC localization feeding the four nested
+decision-tree rules (last exon / <150 nt start-proximal / >407 nt long exon /
+50-nt penultimate rule). Uses pyensembl for transcript models.
+
 ## Install
 
 ```bash
@@ -26,18 +32,20 @@ pip install .            # runtime: pandas (+ mutalyzer, provided by the contain
 pip install .[dev]       # + pytest
 ```
 
-Installing exposes the `generateMutFasta.py` console command, preserving the exact
-CLI the execution container invokes.
+Installing exposes both `generateMutFasta.py` and `generate_input.py` console
+commands, preserving the exact CLIs the execution container/modules invoke.
 
 ## Usage
 
 ```bash
 generateMutFasta.py --sample_id <id> --output_dir <dir> --maf_file <maf> [--multi_transcript]
+generate_input.py --maf_file <maf> --gtf-file <gtf> --cdna-file <cdna> ... 
 ```
 
-`mutalyzer` must be importable at runtime (it is in the neoantigen execution
-container). It is imported tolerantly, so the package installs and its tests run
-without it.
+The heavy runtime deps are container-provided and imported tolerantly / stubbed
+in tests, so the package installs and its unit tests run without them:
+`mutalyzer` (HGVS normalization for `generateMutFasta.py`) and `pyensembl`
+(transcript models for `generate_input.py`; needs a genome cache at runtime).
 
 ## Development
 
