@@ -35,6 +35,8 @@ dev = ["pytest"]
 "convertannotjson.py" = "neoantigen_utils.convertannotjson:main"
 "format_netmhcpan_output.py" = "neoantigen_utils.format_netmhcpan_output:console"
 "generateHLAString.sh" = "neoantigen_utils.hla_string:console"
+"annotate_rna.py" = "neoantigen_utils.annotate_rna:main"
+"prepare_fusion_fasta.py" = "neoantigen_utils.prepare_fusion_fasta:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/neoantigen_utils"]
