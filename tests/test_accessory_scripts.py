@@ -17,6 +17,21 @@ def test_convertannotjson_imports_and_has_entry():
     assert callable(m.process_json_file)
 
 
+def test_generate_input_imports_and_has_console_entry():
+    # Regression guard: the module must import without pyensembl/mutalyzer (heavy
+    # deps are tolerant), and expose the zero-arg ``console`` the entry point uses.
+    from neoantigen_utils import generate_input as gi
+
+    assert callable(gi.main)
+    assert callable(gi.console)
+
+
+def test_generate_mut_fasta_imports_and_has_entry():
+    from neoantigen_utils import generate_mut_fasta as gmf
+
+    assert callable(gmf.main)
+
+
 def test_format_netmhcpan_imports_and_has_console_entry():
     from neoantigen_utils import format_netmhcpan_output as m
 

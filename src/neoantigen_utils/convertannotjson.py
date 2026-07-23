@@ -49,8 +49,12 @@ def main():
     parser = argparse.ArgumentParser(
         description="Process an annotated JSON file and output TSV format."
     )
-    parser.add_argument("--json_file", help="Path to the annotated JSON file")
-    parser.add_argument("--output_file", help="Path to the output TSV file")
+    parser.add_argument(
+        "--json_file", required=True, help="Path to the annotated JSON file"
+    )
+    parser.add_argument(
+        "--output_file", required=True, help="Path to the output TSV file"
+    )
     parser.add_argument(
         "-v", "--version", action="version", version="v{}".format(VERSION)
     )

@@ -4,12 +4,24 @@ import json
 import pandas as pd
 import argparse
 import os
-import Bio
-from Bio import pairwise2
-from Bio.pairwise2 import format_alignment
-import numpy as np
-from pyensembl.genome import Genome
-from pyensembl import EnsemblRelease
+# Heavy, container-provided deps. Imported tolerantly so the module (and its
+# console entry's --help/--version) load on installs without the genomics stack;
+# functions that actually use them fail at call time if they are missing.
+try:
+    import Bio
+    from Bio import pairwise2
+    from Bio.pairwise2 import format_alignment
+except ImportError:  # pragma: no cover - exercised only where biopython is absent
+    Bio = pairwise2 = format_alignment = None
+try:
+    import numpy as np
+except ImportError:  # pragma: no cover
+    np = None
+try:
+    from pyensembl.genome import Genome
+    from pyensembl import EnsemblRelease
+except ImportError:  # pragma: no cover - exercised only where pyensembl is absent
+    Genome = EnsemblRelease = None
 
 VERSION = 1.9
 
@@ -1256,6 +1268,11 @@ def parse_args():
     )
 
     return parser.parse_args()
+
+
+def console():
+    """Zero-argument console entry point (parses argv then runs ``main``)."""
+    main(parse_args())
 
 
 if __name__ == "__main__":

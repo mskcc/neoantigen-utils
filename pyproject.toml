@@ -15,7 +15,9 @@ keywords = ["neoantigen", "fasta", "netmhc", "mutation", "hgvsc", "nmd", "mutaly
 dependencies = [
     "pandas",
     "numpy",
-    "biopython",
+    # Bio.pairwise2 (used in generate_input) is deprecated and slated for removal;
+    # pin an upper bound until migrated to Bio.Align.PairwiseAligner.
+    "biopython<1.90",
 ]
 
 # pyensembl (for generate_input's transcript/NMD logic) and mutalyzer (for
@@ -29,7 +31,7 @@ dev = ["pytest"]
 # Preserve the exact commands the container/modules invoke.
 [project.scripts]
 "generateMutFasta.py" = "neoantigen_utils.generate_mut_fasta:main"
-"generate_input.py" = "neoantigen_utils.generate_input:main"
+"generate_input.py" = "neoantigen_utils.generate_input:console"
 "convertannotjson.py" = "neoantigen_utils.convertannotjson:main"
 "format_netmhcpan_output.py" = "neoantigen_utils.format_netmhcpan_output:console"
 "generateHLAString.sh" = "neoantigen_utils.hla_string:console"
