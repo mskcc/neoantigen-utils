@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "neoantigen-utils"
-version = "1.3.0"
+version = "1.5.0"
 description = "Helper scripts for the MSK neoantigen pipeline: mutated/alt-transcript peptide FASTA generation and neoantigen input construction."
 readme = "README.md"
 requires-python = ">=3.9"
