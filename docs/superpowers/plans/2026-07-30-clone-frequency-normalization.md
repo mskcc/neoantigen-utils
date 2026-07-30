@@ -28,10 +28,16 @@ reach it is to run `main` end-to-end — and `main` calls `ensembl_load()` at li
 349 and reads two netMHCpan TSVs at lines 350-351 before writing its JSON at line
 664. The frequency logic cannot be tested without either a pyensembl install plus
 a full neoantigen fixture, or this extraction. The extraction is mechanical and
-behaviour-preserving, and `generate_input.py` is 1294 lines against a 300-line
-house guideline, so moving a self-contained recursive builder out of `main` also
-serves that. The spec's "do not refactor the exception handling" constraint still
-holds.
+behaviour-preserving.
+
+**Scope of the extraction:** `build_topology` moves out of `main` but stays in
+`src/neoantigen_utils/generate_input.py`. No new module is created and the file
+is not split. Testability is the sole motivation; file length is not a
+consideration here. The spec's "do not refactor the exception handling"
+constraint still holds.
+
+The output path is unchanged: `main` continues to write
+`args.patient_id + "_" + args.id + "_input.json"` at line 664.
 
 ---
 
