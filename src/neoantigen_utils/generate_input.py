@@ -73,7 +73,7 @@ def _assign_frequencies(node, sub_tree, tree_data, purity):
 
 
 def build_topology(
-    sub_tree, start, tree_data, treefile, chrom_pos_dict, mut_data, purity=None
+    sub_tree, start, tree_data, treefile, chrom_pos_dict, mut_data, purity
 ):
     """Recursively build one sample tree's topology dict.
 
