@@ -50,83 +50,97 @@ def compute_purity(tree_data):
     return purity
 
 
-def main(args):
+def build_topology(
+    sub_tree, start, tree_data, treefile, chrom_pos_dict, mut_data, purity=None
+):
+    """Recursively build one sample tree's topology dict.
 
-    def makeChild(subTree, start):
-        if start:
-            subTree = 0
+    :param sub_tree:       clone id for this node
+    :param start:          True only for the outermost call, forcing id 0
+    :param tree_data:      one entry of summ.json's ``trees`` dict
+    :param treefile:       per-tree JSON carrying ``mut_assignments``
+    :param chrom_pos_dict: mutation-name to record mapping
+    :param mut_data:       parsed mutation JSON carrying ``ssms``
+    :param purity:         sample purity; unused until frequency normalisation
+    :return: topology dict for this node and its descendants
+    """
+    if start:
+        sub_tree = 0
 
-        newsubtree = {
-            "clone_id": int(subTree),
-            "clone_mutations": [],
-            "children": [],
-            "X": 0,
-            "x": 0,
-            "new_x": 0,
-        }
+    newsubtree = {
+        "clone_id": int(sub_tree),
+        "clone_mutations": [],
+        "children": [],
+        "X": 0,
+        "x": 0,
+        "new_x": 0,
+    }
 
-        if str(subTree) in trees[tree]["structure"]:
-            for item in trees[tree]["structure"][str(subTree)]:
+    if str(sub_tree) in tree_data["structure"]:
+        for item in tree_data["structure"][str(sub_tree)]:
 
-                child_dict = makeChild(item, False)
+            child_dict = build_topology(
+                item, False, tree_data, treefile, chrom_pos_dict, mut_data, purity
+            )
 
-                newsubtree["children"].append(child_dict)
+            newsubtree["children"].append(child_dict)
 
-            try:
-                ssmli = []
-                if start:
-                    pass
-                else:
-                    for ssm in treefile["mut_assignments"][str(subTree)]["ssms"]:
-                        ssmli.append(
-                            chrom_pos_dict[mut_data["ssms"][ssm]["name"]]["id"]
-                        )
-                newsubtree["clone_mutations"] = ssmli
-                newsubtree["X"] = trees[tree]["populations"][str(subTree)][
-                    "cellular_prevalence"
-                ][0]
-                newsubtree["x"] = trees[tree]["populations"][str(subTree)][
-                    "cellular_prevalence"
-                ][0]
-                newsubtree["new_x"] = 0.0
-            except Exception as e:
-                print("Error in adding new subtree. Error not in base case**")
-                print(subTree)
-                print(e)
-                pass
-
-            return newsubtree
-
-        else:
-            # Base Case
-            # make childrendict and return it
+        try:
             ssmli = []
-
-            for ssm in treefile["mut_assignments"][str(subTree)]["ssms"]:
-                try:
-                    ssmli.append(chrom_pos_dict[mut_data["ssms"][ssm]["name"]]["id"])
-                except Exception as e:
-                    print(
-                        "Error in appending to mutation list. Error in base case appending ssm to ssmli"
-                    )
-                    print(e)
-                    # print(str(subTree))
-                    pass
-
-            try:
-                newsubtree["clone_mutations"] = ssmli
-                newsubtree["X"] = trees[tree]["populations"][str(subTree)][
-                    "cellular_prevalence"
-                ][0]
-                newsubtree["x"] = trees[tree]["populations"][str(subTree)][
-                    "cellular_prevalence"
-                ][0]
-                newsubtree["new_x"] = 0.0
-            except Exception as e:
-                print("Error in adding new subtree. Error in base case")
-                print(e)
+            if start:
                 pass
-            return newsubtree
+            else:
+                for ssm in treefile["mut_assignments"][str(sub_tree)]["ssms"]:
+                    ssmli.append(chrom_pos_dict[mut_data["ssms"][ssm]["name"]]["id"])
+            newsubtree["clone_mutations"] = ssmli
+            newsubtree["X"] = tree_data["populations"][str(sub_tree)][
+                "cellular_prevalence"
+            ][0]
+            newsubtree["x"] = tree_data["populations"][str(sub_tree)][
+                "cellular_prevalence"
+            ][0]
+            newsubtree["new_x"] = 0.0
+        except Exception as e:
+            print("Error in adding new subtree. Error not in base case**")
+            print(sub_tree)
+            print(e)
+            pass
+
+        return newsubtree
+
+    else:
+        # Base Case
+        # make childrendict and return it
+        ssmli = []
+
+        for ssm in treefile["mut_assignments"][str(sub_tree)]["ssms"]:
+            try:
+                ssmli.append(chrom_pos_dict[mut_data["ssms"][ssm]["name"]]["id"])
+            except Exception as e:
+                print(
+                    "Error in appending to mutation list. Error in base case appending ssm to ssmli"
+                )
+                print(e)
+                # print(str(subTree))
+                pass
+
+        try:
+            newsubtree["clone_mutations"] = ssmli
+            newsubtree["X"] = tree_data["populations"][str(sub_tree)][
+                "cellular_prevalence"
+            ][0]
+            newsubtree["x"] = tree_data["populations"][str(sub_tree)][
+                "cellular_prevalence"
+            ][0]
+            newsubtree["new_x"] = 0.0
+        except Exception as e:
+            print("Error in adding new subtree. Error in base case")
+            print(e)
+            pass
+        return newsubtree
+
+
+def main(args):
 
     with open(args.summary_file, "r") as f:
         # Load the JSON data into a dictionary
@@ -320,7 +334,9 @@ def main(args):
             # Load the JSON data into a dictionary
             treefile = json.load(f)
 
-        bigtree = makeChild(tree, True)
+        bigtree = build_topology(
+            tree, True, trees[tree], treefile, chrom_pos_dict, mut_data
+        )
 
         inner_sample_tree_dict["topology"] = bigtree
 
