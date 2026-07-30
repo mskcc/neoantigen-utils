@@ -136,3 +136,75 @@ class TestBuildTopologyStructure:
 
         for node in walk_nodes(topology):
             assert "tilde_x" not in node
+
+
+def assert_frequency_invariants(topology):
+    """Check the clone-frequency contract on a built topology.
+
+    - root X is exactly 1.0
+    - every node: x == X - sum(children X)
+    - leaves: x == X
+    """
+    assert topology["clone_id"] == 0
+    assert topology["X"] == 1.0
+
+    for node in walk_nodes(topology):
+        children = node.get("children", [])
+        expected_x = node["X"] - sum(c["X"] for c in children)
+        assert node["x"] == pytest.approx(expected_x), (
+            f"clone {node['clone_id']}: x={node['x']} != X - sum(children X)="
+            f"{expected_x}"
+        )
+        if not children:
+            assert node["x"] == pytest.approx(node["X"])
+
+
+class TestFrequencyNormalization:
+    def build(self):
+        tree_data, treefile, chrom_pos_dict, mut_data = make_builder_inputs()
+        purity = compute_purity(tree_data)
+        return build_topology(
+            "0", True, tree_data, treefile, chrom_pos_dict, mut_data, purity
+        )
+
+    def test_invariants_hold(self):
+        assert_frequency_invariants(self.build())
+
+    def test_expected_values(self):
+        by_id = {n["clone_id"]: n for n in walk_nodes(self.build())}
+
+        # purity == 0.8 + 0.2 == 1.0, so X equals the raw prevalence here
+        assert by_id[0]["X"] == 1.0
+        assert by_id[1]["X"] == pytest.approx(0.8)
+        assert by_id[2]["X"] == pytest.approx(0.5)
+        assert by_id[3]["X"] == pytest.approx(0.2)
+
+        assert by_id[0]["x"] == pytest.approx(0.0)  # 1.0 - (0.8 + 0.2)
+        assert by_id[1]["x"] == pytest.approx(0.3)  # 0.8 - 0.5
+        assert by_id[2]["x"] == pytest.approx(0.5)  # leaf
+        assert by_id[3]["x"] == pytest.approx(0.2)  # leaf
+
+    def test_root_children_X_sum_to_one(self):
+        topology = self.build()
+        assert sum(c["X"] for c in topology["children"]) == pytest.approx(1.0)
+
+    def test_normalization_divides_by_purity(self):
+        # Halve every tumour prevalence: purity halves too, so normalised X is
+        # unchanged. This is what distinguishes normalised X from raw prevalence.
+        tree_data = make_tree_data(
+            FIXTURE_STRUCTURE,
+            {"0": 1.0, "1": 0.4, "2": 0.25, "3": 0.1},
+        )
+        _, treefile, chrom_pos_dict, mut_data = make_builder_inputs()
+        purity = compute_purity(tree_data)
+        assert purity == pytest.approx(0.5)
+
+        topology = build_topology(
+            "0", True, tree_data, treefile, chrom_pos_dict, mut_data, purity
+        )
+        by_id = {n["clone_id"]: n for n in walk_nodes(topology)}
+
+        assert by_id[1]["X"] == pytest.approx(0.8)
+        assert by_id[2]["X"] == pytest.approx(0.5)
+        assert by_id[3]["X"] == pytest.approx(0.2)
+        assert_frequency_invariants(topology)
