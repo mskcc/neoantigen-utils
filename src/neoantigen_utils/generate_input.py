@@ -26,6 +26,30 @@ except ImportError:  # pragma: no cover - exercised only where pyensembl is abse
 VERSION = 1.9
 
 
+def compute_purity(tree_data):
+    """Sum the raw cellular prevalences of the root clone's children.
+
+    PhyloWGS node 0 is the germline population; the tumour clones hanging off
+    it sum to the sample purity. Inclusive clone frequencies are normalised by
+    this value so that the root's children sum to exactly 1.0.
+
+    :param tree_data: one entry of summ.json's ``trees`` dict, carrying
+                      ``structure`` and ``populations``
+    :return: purity, strictly greater than 0
+    :raises ValueError: if the tree has no root children or they sum to 0
+    """
+    roots = tree_data["structure"].get("0", [])
+    purity = sum(
+        tree_data["populations"][str(r)]["cellular_prevalence"][0] for r in roots
+    )
+    if purity == 0:
+        raise ValueError(
+            "Cannot normalise clone frequencies: purity is 0 "
+            "(no root children, or their cellular prevalences sum to 0)."
+        )
+    return purity
+
+
 def main(args):
 
     def makeChild(subTree, start):
