@@ -515,9 +515,37 @@ Expected: FAIL — root `X` is the raw `1.0` by luck, but `test_expected_values`
 fails on clone 1 (`x` is `0.8`, not `0.3`) and `test_normalization_divides_by_purity`
 fails on clone 1 (`X` is `0.4`, not `0.8`).
 
-- [ ] **Step 3: Replace the frequency assignment in the recursive branch**
+- [ ] **Step 3: Add the frequency-assignment helper**
 
-Inside `build_topology`, in the first `try` block, replace:
+The frequency assignment is needed in both branches of `build_topology`. Write
+it once, at module level, directly above `build_topology`:
+
+```python
+def _assign_frequencies(node, sub_tree, tree_data, purity):
+    """Set the inclusive, exclusive, and placeholder frequencies on one node.
+
+    ``X`` is the cellular prevalence normalised by purity, with the germline
+    root pinned to 1.0. ``x`` is the exclusive frequency: ``X`` less the
+    inclusive frequencies of the node's children, so a leaf's ``x`` equals its
+    ``X``. Children must already be populated on ``node``.
+
+    :param node:      topology dict being built; mutated in place
+    :param sub_tree:  clone id for this node
+    :param tree_data: one entry of summ.json's ``trees`` dict
+    :param purity:    sample purity, from :func:`compute_purity`
+    """
+    node["X"] = (
+        1.0
+        if int(sub_tree) == 0
+        else tree_data["populations"][str(sub_tree)]["cellular_prevalence"][0] / purity
+    )
+    node["x"] = node["X"] - sum(c["X"] for c in node["children"])
+    node["new_x"] = 0.0
+```
+
+- [ ] **Step 4: Call the helper from both branches**
+
+Inside `build_topology`, in the first `try` block (recursive branch), replace:
 
 ```python
             newsubtree["X"] = tree_data["populations"][str(sub_tree)][
@@ -532,38 +560,14 @@ Inside `build_topology`, in the first `try` block, replace:
 with:
 
 ```python
-            newsubtree["X"] = (
-                1.0
-                if int(sub_tree) == 0
-                else tree_data["populations"][str(sub_tree)]["cellular_prevalence"][0]
-                / purity
-            )
-            newsubtree["x"] = newsubtree["X"] - sum(
-                c["X"] for c in newsubtree["children"]
-            )
-            newsubtree["new_x"] = 0.0
+            _assign_frequencies(newsubtree, sub_tree, tree_data, purity)
 ```
 
-Leave the surrounding `try`/`except` exactly as it is.
+Apply the identical replacement to the same three assignments in the second
+`try` block (the base case). There, `newsubtree["children"]` is empty, so the
+helper's `sum(...)` is `0` and `x == X` — the correct leaf behaviour.
 
-- [ ] **Step 4: Replace the frequency assignment in the base case**
-
-Apply the identical replacement in the second `try` block (the base case). In
-the base case `newsubtree["children"]` is empty, so the `sum(...)` is `0` and
-`x == X`, which is the correct leaf behaviour:
-
-```python
-            newsubtree["X"] = (
-                1.0
-                if int(sub_tree) == 0
-                else tree_data["populations"][str(sub_tree)]["cellular_prevalence"][0]
-                / purity
-            )
-            newsubtree["x"] = newsubtree["X"] - sum(
-                c["X"] for c in newsubtree["children"]
-            )
-            newsubtree["new_x"] = 0.0
-```
+Leave both `try`/`except` structures exactly as they are.
 
 - [ ] **Step 5: Pass purity from the call site**
 
@@ -603,13 +607,12 @@ valid unchanged.
 
 - [ ] **Step 8: Verify the test catches a regression**
 
-Temporarily change the `x` line in the base case to
-`newsubtree["x"] = newsubtree["X"]`.
+Temporarily change the `x` line in `_assign_frequencies` to
+`node["x"] = node["X"]`.
 
 Run: `pytest tests/test_generate_input.py::TestFrequencyNormalization -v`
-Expected: still PASS — the base case only ever has empty children, so this edit
-is a no-op there. Now make the same change in the **recursive branch** instead.
-Expected: FAIL on `test_expected_values` and `test_invariants_hold` (clone 1).
+Expected: FAIL on `test_expected_values` and `test_invariants_hold` — clone 1
+has children, so its `x` becomes `0.8` instead of `0.3`.
 
 Restore the correct implementation and re-run. Expected: PASS.
 
