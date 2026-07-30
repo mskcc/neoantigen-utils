@@ -23,7 +23,7 @@ try:
 except ImportError:  # pragma: no cover - exercised only where pyensembl is absent
     Genome = EnsemblRelease = None
 
-VERSION = 1.9
+VERSION = 2.0
 
 
 def compute_purity(tree_data):
@@ -48,6 +48,28 @@ def compute_purity(tree_data):
             "(no root children, or their cellular prevalences sum to 0)."
         )
     return purity
+
+
+def _assign_frequencies(node, sub_tree, tree_data, purity):
+    """Set the inclusive, exclusive, and placeholder frequencies on one node.
+
+    ``X`` is the cellular prevalence normalised by purity, with the germline
+    root pinned to 1.0. ``x`` is the exclusive frequency: ``X`` less the
+    inclusive frequencies of the node's children, so a leaf's ``x`` equals its
+    ``X``. Children must already be populated on ``node``.
+
+    :param node:      topology dict being built; mutated in place
+    :param sub_tree:  clone id for this node
+    :param tree_data: one entry of summ.json's ``trees`` dict
+    :param purity:    sample purity, from :func:`compute_purity`
+    """
+    node["X"] = (
+        1.0
+        if int(sub_tree) == 0
+        else tree_data["populations"][str(sub_tree)]["cellular_prevalence"][0] / purity
+    )
+    node["x"] = node["X"] - sum(c["X"] for c in node["children"])
+    node["new_x"] = 0.0
 
 
 def build_topology(
@@ -93,13 +115,7 @@ def build_topology(
                 for ssm in treefile["mut_assignments"][str(sub_tree)]["ssms"]:
                     ssmli.append(chrom_pos_dict[mut_data["ssms"][ssm]["name"]]["id"])
             newsubtree["clone_mutations"] = ssmli
-            newsubtree["X"] = tree_data["populations"][str(sub_tree)][
-                "cellular_prevalence"
-            ][0]
-            newsubtree["x"] = tree_data["populations"][str(sub_tree)][
-                "cellular_prevalence"
-            ][0]
-            newsubtree["new_x"] = 0.0
+            _assign_frequencies(newsubtree, sub_tree, tree_data, purity)
         except Exception as e:
             print("Error in adding new subtree. Error not in base case**")
             print(sub_tree)
@@ -126,13 +142,7 @@ def build_topology(
 
         try:
             newsubtree["clone_mutations"] = ssmli
-            newsubtree["X"] = tree_data["populations"][str(sub_tree)][
-                "cellular_prevalence"
-            ][0]
-            newsubtree["x"] = tree_data["populations"][str(sub_tree)][
-                "cellular_prevalence"
-            ][0]
-            newsubtree["new_x"] = 0.0
+            _assign_frequencies(newsubtree, sub_tree, tree_data, purity)
         except Exception as e:
             print("Error in adding new subtree. Error in base case")
             print(e)
@@ -334,8 +344,13 @@ def main(args):
             # Load the JSON data into a dictionary
             treefile = json.load(f)
 
+        try:
+            purity = compute_purity(trees[tree])
+        except ValueError as e:
+            raise ValueError(f"Tree {tree}: {e}") from e
+
         bigtree = build_topology(
-            tree, True, trees[tree], treefile, chrom_pos_dict, mut_data
+            tree, True, trees[tree], treefile, chrom_pos_dict, mut_data, purity
         )
 
         inner_sample_tree_dict["topology"] = bigtree
