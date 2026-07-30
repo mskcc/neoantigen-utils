@@ -122,8 +122,61 @@ Load-bearing invariant, checked for every node:
 x_i + sum(X_c for c in children(i)) == X_i
 ```
 
+## Validation Against Approved Output
+
+Checked against the reference implementation's published data:
+`LukszaLab/NeoantigenEditing`, `data/Patient_data/11-LTS/Recurrent/11_LTS_metastasis.json`
+— the pre-annotation file, which is the direct analog of this script's output.
+(The `_annotated` sibling is downstream and carries additional `TMB`, `F_I`,
+`F_P`, `neoantigen_load`, `NA_Mut` fields.)
+
+Across 57 nodes in 5 sample trees:
+
+| Claim | Result |
+|---|---|
+| Root `X` pinned to `1.0` | Exactly `1.0` in all 5 trees |
+| `X` = prevalence / purity | `sum(root children X) == 1.0` exactly |
+| `x = X - sum(children X)` | 0 violations across all 57 nodes |
+| Leaf `x == X` | Holds |
+| Root `x` | `0.0`, which the formula yields as `1.0 - 1.0`; no special case needed |
+| `new_x` is a placeholder | `0.0` everywhere, including post-annotation |
+| `clone_mutations` id format | `chrom_pos_ref_alt`, matches this script's existing format |
+
+The root's `x` requires no special-casing: the generic formula produces `0.0`
+because the root's children's `X` sum to exactly `1.0` after normalization.
+
+## Known Gap: `tilde_x`
+
+The approved input format carries a field this script does not emit:
+
+```
+['X', 'children', 'clone_id', 'clone_mutations', 'new_x', 'tilde_x', 'x']
+```
+
+`tilde_x` is not a rescale of `x` — both already sum to `1.0` per tree. It is
+`x` with an entire subclade zeroed and the remainder renormalized. In tree 0 of
+the reference file, clones 7 and 8 have `tilde_x == 0.0` while every surviving
+clone shares the ratio `tilde_x / x == 1 / (1 - X_7) == 1.8857`.
+
+Neither the reference snippet governing this work nor any published module in
+the `NeoantigenEditing` repository computes `tilde_x`; it is only consumed, in
+`predictions_aggregated_loglikelihood_scores.py` (lines 79-105, 178), which
+performs the paired primary-versus-recurrent longitudinal analysis. The
+single-sample path, `predictions_clones.py:86`, uses plain `x`:
+
+```python
+node["predicted_x"] = node["x"] * np.exp(node["fitness"])
+```
+
+`tilde_x` therefore appears to originate in an upstream step specific to
+paired-sample setups, where the zeroing marks clones absent from the paired
+sample. The exclusion rule is unknown and is not inferable from available
+sources, so `tilde_x` is deliberately not emitted. This does not block the
+single-sample clone-prediction path.
+
 ## Out of Scope
 
+- `tilde_x` (see Known Gap above)
 - Multi-sample (`ord`) support
 - Any change to `new_x` semantics
 - Refactoring the existing exception handling in `makeChild`
