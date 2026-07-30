@@ -25,6 +25,29 @@ spliced/CDS-coordinate, strand-aware PTC localization feeding the four nested
 decision-tree rules (last exon / <150 nt start-proximal / >407 nt long exon /
 50-nt penultimate rule). Uses pyensembl for transcript models.
 
+#### Clone frequency fields
+
+Each node of `sample_trees[].topology` carries two frequencies:
+
+- **`X`** — inclusive clone frequency: the PhyloWGS cellular prevalence divided
+  by sample purity. The root clone is pinned to `1.0`, so the root's children
+  sum to exactly `1.0`.
+- **`x`** — exclusive clone frequency: `X` minus the sum of the children's `X`.
+  For a leaf, `x == X`. For the root, `x == 0.0`.
+
+Purity is the sum of the raw cellular prevalences of the root clone's children.
+A tree whose purity is `0` is an error, not a tree of zeros.
+
+`new_x` is emitted as `0.0` and populated downstream.
+
+`tilde_x`, present in some NeoantigenEditing inputs, is **not** emitted. It is
+only consumed by the paired primary-versus-recurrent longitudinal analysis, and
+the rule determining which clones it zeroes is not available. See
+`docs/superpowers/specs/2026-07-30-clone-frequency-normalization-design.md`.
+
+The sample index is fixed at `cellular_prevalence[0]`; multi-sample
+reconstructions are not supported.
+
 ## Install
 
 ```bash

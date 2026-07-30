@@ -83,7 +83,8 @@ def build_topology(
     :param treefile:       per-tree JSON carrying ``mut_assignments``
     :param chrom_pos_dict: mutation-name to record mapping
     :param mut_data:       parsed mutation JSON carrying ``ssms``
-    :param purity:         sample purity; unused until frequency normalisation
+    :param purity:         sample purity, from :func:`compute_purity`; divides
+                           each non-root clone's cellular prevalence
     :return: topology dict for this node and its descendants
     """
     if start:
