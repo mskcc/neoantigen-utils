@@ -33,7 +33,7 @@ Each node of `sample_trees[].topology` carries two frequencies:
   by sample purity. The root clone is pinned to `1.0`, so the root's children
   sum to exactly `1.0`.
 - **`x`** — exclusive clone frequency: `X` minus the sum of the children's `X`.
-  For a leaf, `x == X`. For the root, `x == 0.0`.
+  For a leaf, `x == X`. For the root, `x == 0.0` up to floating-point rounding.
 
 Purity is the sum of the raw cellular prevalences of the root clone's children.
 A tree whose purity is `0` is an error, not a tree of zeros.
