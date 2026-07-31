@@ -18,13 +18,14 @@ dependencies = [
     # Bio.pairwise2 (used in generate_input) is deprecated and slated for removal;
     # pin an upper bound until migrated to Bio.Align.PairwiseAligner.
     "biopython<1.90",
+    # Used by generate_input for transcript/NMD logic.
+    "pyensembl",
 ]
 
-# pyensembl (for generate_input's transcript/NMD logic) and mutalyzer (for
-# generate_mut_fasta's HGVS normalization) are heavy, container-provided runtime
-# deps. They are imported tolerantly / stubbed in tests, so they are optional.
+# mutalyzer (for generate_mut_fasta's HGVS normalization) is a heavy,
+# container-provided runtime dep. It is imported tolerantly / stubbed in
+# tests, so it stays optional.
 [project.optional-dependencies]
-pyensembl = ["pyensembl"]
 mutalyzer = ["mutalyzer"]
 dev = ["pytest"]
 
