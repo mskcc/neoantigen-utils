@@ -25,3 +25,8 @@ CLAUDE.local.md
 # OS
 .DS_Store
 Thumbs.db
+data/
+
+# HLA scratch outputs
+NETMHCPAN_HLA_ALLELE_FINDINGS.md
+massaged.winners.hla.txt
