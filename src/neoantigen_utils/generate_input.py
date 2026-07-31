@@ -116,12 +116,13 @@ def build_topology(
                 for ssm in treefile["mut_assignments"][str(sub_tree)]["ssms"]:
                     ssmli.append(chrom_pos_dict[mut_data["ssms"][ssm]["name"]]["id"])
             newsubtree["clone_mutations"] = ssmli
-            _assign_frequencies(newsubtree, sub_tree, tree_data, purity)
         except Exception as e:
             print("Error in adding new subtree. Error not in base case**")
             print(sub_tree)
             print(e)
             pass
+
+        _assign_frequencies(newsubtree, sub_tree, tree_data, purity)
 
         return newsubtree
 
@@ -141,13 +142,8 @@ def build_topology(
                 # print(str(subTree))
                 pass
 
-        try:
-            newsubtree["clone_mutations"] = ssmli
-            _assign_frequencies(newsubtree, sub_tree, tree_data, purity)
-        except Exception as e:
-            print("Error in adding new subtree. Error in base case")
-            print(e)
-            pass
+        newsubtree["clone_mutations"] = ssmli
+        _assign_frequencies(newsubtree, sub_tree, tree_data, purity)
         return newsubtree
 
 
