@@ -230,3 +230,24 @@ class TestSelectTopTrees:
 
     def test_empty_trees_returns_empty_list(self):
         assert select_top_trees({}, 10) == []
+
+
+class TestTopNTreesArgDefault:
+    def test_default_top_n_trees_is_ten(self):
+        import sys
+        from neoantigen_utils.generate_input import parse_args
+
+        argv = [
+            "prog",
+            "--maf_file", "x", "--summary_file", "x", "--mutation_file", "x",
+            "--tree_directory", "x", "--id", "x", "--patient_id", "x",
+            "--cohort", "x", "--HLA_genes", "x",
+            "--netMHCpan_MUT_input", "x", "--netMHCpan_WT_input", "x",
+        ]
+        old_argv = sys.argv
+        sys.argv = argv
+        try:
+            args = parse_args()
+        finally:
+            sys.argv = old_argv
+        assert args.top_n_trees == 10
