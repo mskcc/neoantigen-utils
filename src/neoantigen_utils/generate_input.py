@@ -347,7 +347,7 @@ def main(args):
 
     trees = summ_data["trees"]
 
-    for tree in trees:
+    for tree in select_top_trees(trees, args.top_n_trees):
 
         inner_sample_tree_dict = {"topology": [], "score": trees[tree]["llh"]}
         with open("./" + args.tree_directory + "/" + str(tree) + ".json", "r") as f:
@@ -1330,6 +1330,12 @@ def parse_args():
 
     parser.add_argument(
         "--kD_cutoff", default=500, help="Cutoff value for the kD, default is 500",
+    )
+    parser.add_argument(
+        "--top_n_trees",
+        type=int,
+        default=10,
+        help="Number of top trees (by llh, highest first) to include, default is 10",
     )
 
     return parser.parse_args()
