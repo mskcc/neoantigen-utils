@@ -1,6 +1,6 @@
 import pytest
 
-from neoantigen_utils.generate_input import compute_purity
+from neoantigen_utils.generate_input import compute_purity, select_top_trees
 
 
 def make_tree_data(structure, prevalences):
@@ -208,3 +208,25 @@ class TestFrequencyNormalization:
         assert by_id[2]["X"] == pytest.approx(0.5)
         assert by_id[3]["X"] == pytest.approx(0.2)
         assert_frequency_invariants(topology)
+
+
+class TestSelectTopTrees:
+    def test_returns_top_n_sorted_by_descending_llh(self):
+        trees = {
+            "0": {"llh": -50.0},
+            "1": {"llh": -10.0},
+            "2": {"llh": -30.0},
+            "3": {"llh": -5.0},
+        }
+        assert select_top_trees(trees, 2) == ["3", "1"]
+
+    def test_returns_all_keys_when_n_exceeds_tree_count(self):
+        trees = {"0": {"llh": -2.0}, "1": {"llh": -1.0}}
+        assert select_top_trees(trees, 10) == ["1", "0"]
+
+    def test_n_zero_returns_empty_list(self):
+        trees = {"0": {"llh": -2.0}, "1": {"llh": -1.0}}
+        assert select_top_trees(trees, 0) == []
+
+    def test_empty_trees_returns_empty_list(self):
+        assert select_top_trees({}, 10) == []
