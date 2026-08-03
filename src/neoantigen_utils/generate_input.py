@@ -50,6 +50,21 @@ def compute_purity(tree_data):
     return purity
 
 
+def select_top_trees(trees, n):
+    """Return the ``n`` tree keys from ``trees`` with the highest ``llh``.
+
+    PhyloWGS ``llh`` is a log-likelihood; values closer to 0 indicate a
+    better-fitting tree, so this sorts descending.
+
+    :param trees: summ.json's ``trees`` dict, keyed by tree id
+    :param n: number of trees to keep; if ``n`` exceeds the number of
+              available trees, all tree keys are returned
+    :return: list of tree keys, sorted by descending llh, length
+             ``min(n, len(trees))``
+    """
+    return sorted(trees, key=lambda t: trees[t]["llh"], reverse=True)[:n]
+
+
 def _assign_frequencies(node, sub_tree, tree_data, purity):
     """Set the inclusive, exclusive, and placeholder frequencies on one node.
 
