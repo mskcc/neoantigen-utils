@@ -251,3 +251,47 @@ class TestTopNTreesArgDefault:
         finally:
             sys.argv = old_argv
         assert args.top_n_trees == 10
+
+
+class TestMafCommentHandling:
+    """TEMPO/Genome Nexus MAFs carry a leading ``#version`` line.
+
+    Without ``comment="#"`` pandas infers a single column from that line and
+    every data row raises ``ParserError``.
+    """
+
+    MAF = (
+        "#version 2.4\n"
+        "Hugo_Symbol\tChromosome\tStart_Position\tVariant_Classification\n"
+        "TP53\t17\t7577121\tMissense_Mutation\n"
+        "KRAS\t12\t25398284\tMissense_Mutation\n"
+    )
+
+    def _write(self, tmp_path):
+        maf = tmp_path / "test.maf"
+        maf.write_text(self.MAF)
+        return maf
+
+    def test_commented_maf_parses(self, tmp_path):
+        import pandas as pd
+
+        from neoantigen_utils.generate_input import read_maf
+
+        df = read_maf(self._write(tmp_path))
+        assert list(df.columns) == [
+            "Hugo_Symbol",
+            "Chromosome",
+            "Start_Position",
+            "Variant_Classification",
+        ]
+        assert len(df) == 2
+        assert df["Hugo_Symbol"].tolist() == ["TP53", "KRAS"]
+
+    def test_uncommented_maf_still_parses(self, tmp_path):
+        from neoantigen_utils.generate_input import read_maf
+
+        maf = tmp_path / "plain.maf"
+        maf.write_text(self.MAF.split("\n", 1)[1])
+        df = read_maf(maf)
+        assert len(df) == 2
+        assert df["Hugo_Symbol"].tolist() == ["TP53", "KRAS"]

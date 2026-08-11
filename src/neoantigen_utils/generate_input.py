@@ -50,6 +50,19 @@ def compute_purity(tree_data):
     return purity
 
 
+def read_maf(maf_file):
+    """Read a MAF, skipping the leading ``#version`` comment line.
+
+    TEMPO and Genome Nexus emit MAFs with a leading ``#version`` line. Without
+    ``comment="#"`` pandas infers a single column from it and every data row
+    raises ``ParserError``. Matches ``annotate_rna.read_maf``'s handling.
+
+    :param maf_file: path to the MAF
+    :return: the MAF as a DataFrame
+    """
+    return pd.read_csv(maf_file, delimiter="\t", comment="#")
+
+
 def select_top_trees(trees, n):
     """Return the ``n`` tree keys from ``trees`` with the highest ``llh``.
 
@@ -177,7 +190,7 @@ def main(args):
     )  # Used for matching mutation without the subsititution information from netMHCpan to phyloWGS output
     gene_dict = {}
 
-    mafdf = pd.read_csv(args.maf_file, delimiter="\t")
+    mafdf = read_maf(args.maf_file)
 
     for index, row in mafdf.iterrows():
         if (
