@@ -25,7 +25,7 @@ CLAUDE.local.md
 # OS
 .DS_Store
 Thumbs.db
-data/
+/data/
 
 # HLA scratch outputs
 NETMHCPAN_HLA_ALLELE_FINDINGS.md
