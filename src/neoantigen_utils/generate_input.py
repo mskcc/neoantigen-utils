@@ -23,7 +23,7 @@ try:
 except ImportError:  # pragma: no cover - exercised only where pyensembl is absent
     Genome = EnsemblRelease = None
 
-VERSION = 2.0
+VERSION = 1.10
 
 
 def compute_purity(tree_data):
