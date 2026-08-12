@@ -116,6 +116,28 @@ class TestBuildTopologyStructure:
         assert by_id[2]["clone_mutations"] == ["2_200_C_G"]
         assert by_id[3]["clone_mutations"] == ["3_300_G_A"]
 
+    def test_clone_missing_from_mut_assignments_raises(self):
+        """summ.json and the tree JSON disagreeing must not emit an empty clone."""
+        tree_data, treefile, chrom_pos_dict, mut_data = make_builder_inputs()
+        del treefile["mut_assignments"]["2"]
+
+        with pytest.raises(KeyError, match="missing from the tree file"):
+            build_topology(
+                "0", True, tree_data, treefile, chrom_pos_dict, mut_data, purity=1.0
+            )
+
+    def test_unresolvable_ssm_is_dropped_not_fatal(self):
+        """An ssm with no MAF record is skipped; the rest of the clone survives."""
+        tree_data, treefile, chrom_pos_dict, mut_data = make_builder_inputs()
+        treefile["mut_assignments"]["1"]["ssms"].append("s_unknown")
+
+        topology = build_topology(
+            "0", True, tree_data, treefile, chrom_pos_dict, mut_data, purity=1.0
+        )
+
+        by_id = {n["clone_id"]: n for n in walk_nodes(topology)}
+        assert by_id[1]["clone_mutations"] == ["1_100_A_T"]
+
     def test_new_x_is_zero_everywhere(self):
         tree_data, treefile, chrom_pos_dict, mut_data = make_builder_inputs()
 
@@ -211,7 +233,10 @@ class TestFrequencyNormalization:
 
 
 class TestSelectTopTrees:
+    """PhyloWGS ``llh`` is a log-likelihood; higher (closer to 0) fits better."""
+
     def test_returns_top_n_sorted_by_descending_llh(self):
+        """The best-fitting ``n`` trees come back, best first."""
         trees = {
             "0": {"llh": -50.0},
             "1": {"llh": -10.0},
@@ -221,19 +246,31 @@ class TestSelectTopTrees:
         assert select_top_trees(trees, 2) == ["3", "1"]
 
     def test_returns_all_keys_when_n_exceeds_tree_count(self):
+        """Asking for more trees than exist keeps all of them, still sorted."""
         trees = {"0": {"llh": -2.0}, "1": {"llh": -1.0}}
         assert select_top_trees(trees, 10) == ["1", "0"]
 
     def test_n_zero_returns_empty_list(self):
+        """``n = 0`` is a valid request for no trees, not an error."""
         trees = {"0": {"llh": -2.0}, "1": {"llh": -1.0}}
         assert select_top_trees(trees, 0) == []
 
     def test_empty_trees_returns_empty_list(self):
+        """No trees in, no trees out."""
         assert select_top_trees({}, 10) == []
 
+    def test_negative_n_raises(self):
+        """A negative slice would return the *worst* trees, so reject it."""
+        trees = {"0": {"llh": -2.0}, "1": {"llh": -1.0}}
+        with pytest.raises(ValueError, match="must be >= 0"):
+            select_top_trees(trees, -1)
 
-class TestTopNTreesArgDefault:
+
+class TestTopNTreesArg:
+    """``--top_n_trees`` caps the emitted trees and must reject negatives."""
+
     def test_default_top_n_trees_is_ten(self):
+        """Omitting the flag keeps the documented default of 10."""
         import sys
         from neoantigen_utils.generate_input import parse_args
 
@@ -252,12 +289,21 @@ class TestTopNTreesArgDefault:
             sys.argv = old_argv
         assert args.top_n_trees == 10
 
+    def test_negative_top_n_trees_is_rejected(self):
+        """argparse fails fast rather than letting a negative slice through."""
+        import argparse
+
+        from neoantigen_utils.generate_input import _non_negative_int
+
+        with pytest.raises(argparse.ArgumentTypeError):
+            _non_negative_int("-1")
+
 
 class TestMafCommentHandling:
     """TEMPO/Genome Nexus MAFs carry a leading ``#version`` line.
 
-    Without ``comment="#"`` pandas infers a single column from that line and
-    every data row raises ``ParserError``.
+    Skipping only the leading ``#`` lines keeps a literal ``#`` inside a data
+    row intact; ``pd.read_csv(comment="#")`` would truncate the row there.
     """
 
     MAF = (
@@ -273,8 +319,7 @@ class TestMafCommentHandling:
         return maf
 
     def test_commented_maf_parses(self, tmp_path):
-        import pandas as pd
-
+        """The leading ``#version`` line is consumed, not parsed as a header."""
         from neoantigen_utils.generate_input import read_maf
 
         df = read_maf(self._write(tmp_path))
@@ -288,6 +333,7 @@ class TestMafCommentHandling:
         assert df["Hugo_Symbol"].tolist() == ["TP53", "KRAS"]
 
     def test_uncommented_maf_still_parses(self, tmp_path):
+        """A MAF with no comment line is unaffected."""
         from neoantigen_utils.generate_input import read_maf
 
         maf = tmp_path / "plain.maf"
@@ -295,3 +341,17 @@ class TestMafCommentHandling:
         df = read_maf(maf)
         assert len(df) == 2
         assert df["Hugo_Symbol"].tolist() == ["TP53", "KRAS"]
+
+    def test_hash_inside_a_data_row_is_preserved(self, tmp_path):
+        """A literal ``#`` in an annotation field must not truncate the row."""
+        from neoantigen_utils.generate_input import read_maf
+
+        maf = tmp_path / "hash.maf"
+        maf.write_text(
+            "#version 2.4\n"
+            "Hugo_Symbol\tNote\tVariant_Classification\n"
+            "TP53\tclone #3\tMissense_Mutation\n"
+        )
+        df = read_maf(maf)
+        assert df["Note"].tolist() == ["clone #3"]
+        assert df["Variant_Classification"].tolist() == ["Missense_Mutation"]

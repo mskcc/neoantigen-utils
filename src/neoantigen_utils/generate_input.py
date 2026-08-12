@@ -23,7 +23,9 @@ try:
 except ImportError:  # pragma: no cover - exercised only where pyensembl is absent
     Genome = EnsemblRelease = None
 
-VERSION = 1.10
+from neoantigen_utils.generate_mut_fasta import skip_lines_start_with
+
+VERSION = "1.10"
 
 
 def compute_purity(tree_data):
@@ -51,16 +53,20 @@ def compute_purity(tree_data):
 
 
 def read_maf(maf_file):
-    """Read a MAF, skipping the leading ``#version`` comment line.
+    """Read a MAF, skipping the leading ``#version`` comment lines.
 
     TEMPO and Genome Nexus emit MAFs with a leading ``#version`` line. Without
-    ``comment="#"`` pandas infers a single column from it and every data row
-    raises ``ParserError``. Matches ``annotate_rna.read_maf``'s handling.
+    skipping it pandas infers a single column from it and every data row raises
+    ``ParserError``. This delegates to
+    :func:`~neoantigen_utils.generate_mut_fasta.skip_lines_start_with`, which
+    consumes only the *leading* ``#`` lines; ``pd.read_csv(comment="#")`` would
+    instead truncate any data row at a literal ``#`` anywhere in it, silently
+    turning the remaining annotation columns into ``NaN``.
 
     :param maf_file: path to the MAF
     :return: the MAF as a DataFrame
     """
-    return pd.read_csv(maf_file, delimiter="\t", comment="#")
+    return skip_lines_start_with(maf_file, "#", delimiter="\t")
 
 
 def select_top_trees(trees, n):
@@ -74,7 +80,11 @@ def select_top_trees(trees, n):
               available trees, all tree keys are returned
     :return: list of tree keys, sorted by descending llh, length
              ``min(n, len(trees))``
+    :raises ValueError: if ``n`` is negative -- a negative slice would silently
+                        return the *worst*-fitting trees
     """
+    if n < 0:
+        raise ValueError(f"top_n_trees must be >= 0, got {n}")
     return sorted(trees, key=lambda t: trees[t]["llh"], reverse=True)[:n]
 
 
@@ -98,6 +108,49 @@ def _assign_frequencies(node, sub_tree, tree_data, purity):
     )
     node["x"] = node["X"] - sum(c["X"] for c in node["children"])
     node["new_x"] = 0.0
+
+
+def _collect_clone_mutations(sub_tree, treefile, chrom_pos_dict, mut_data):
+    """Map one clone's PhyloWGS ssm ids onto MAF mutation ids.
+
+    Individual ssms that cannot be resolved are dropped rather than aborting the
+    run -- a PhyloWGS ssm may legitimately have no matching MAF record. The
+    number dropped is reported so a silently truncated clone is visible in the
+    log instead of only showing up as per-mutation noise.
+
+    :param sub_tree:       clone id for this node
+    :param treefile:       per-tree JSON carrying ``mut_assignments``
+    :param chrom_pos_dict: mutation-name to record mapping
+    :param mut_data:       parsed mutation JSON carrying ``ssms``
+    :return: list of resolved mutation ids
+    :raises KeyError: if the clone is absent from ``mut_assignments`` -- that
+                      means the tree JSON and summ.json disagree, which would
+                      silently emit a mutation-less clone if tolerated
+    """
+    try:
+        ssms = treefile["mut_assignments"][str(sub_tree)]["ssms"]
+    except KeyError as e:
+        raise KeyError(
+            f"Clone {sub_tree} is missing from the tree file's mut_assignments; "
+            "the tree JSON and summ.json disagree on this tree's clones."
+        ) from e
+
+    ssmli = []
+    dropped = 0
+    for ssm in ssms:
+        try:
+            ssmli.append(chrom_pos_dict[mut_data["ssms"][ssm]["name"]]["id"])
+        except Exception as e:
+            dropped += 1
+            print(f"Clone {sub_tree}: could not resolve ssm {ssm} to a mutation id")
+            print(e)
+
+    if dropped:
+        print(
+            f"Clone {sub_tree}: dropped {dropped} of {len(ssms)} mutations "
+            "that could not be resolved."
+        )
+    return ssmli
 
 
 def build_topology(
@@ -127,50 +180,21 @@ def build_topology(
         "new_x": 0,
     }
 
-    if str(sub_tree) in tree_data["structure"]:
-        for item in tree_data["structure"][str(sub_tree)]:
-
-            child_dict = build_topology(
+    for item in tree_data["structure"].get(str(sub_tree), []):
+        newsubtree["children"].append(
+            build_topology(
                 item, False, tree_data, treefile, chrom_pos_dict, mut_data, purity
             )
+        )
 
-            newsubtree["children"].append(child_dict)
+    # The germline root carries no mutations of its own.
+    if not start:
+        newsubtree["clone_mutations"] = _collect_clone_mutations(
+            sub_tree, treefile, chrom_pos_dict, mut_data
+        )
 
-        ssmli = []
-        if not start:
-            for ssm in treefile["mut_assignments"][str(sub_tree)]["ssms"]:
-                try:
-                    ssmli.append(chrom_pos_dict[mut_data["ssms"][ssm]["name"]]["id"])
-                except Exception as e:
-                    print("Error in appending to mutation list. Error not in base case")
-                    print(sub_tree)
-                    print(e)
-                    pass
-        newsubtree["clone_mutations"] = ssmli
-
-        _assign_frequencies(newsubtree, sub_tree, tree_data, purity)
-
-        return newsubtree
-
-    else:
-        # Base Case
-        # make childrendict and return it
-        ssmli = []
-
-        for ssm in treefile["mut_assignments"][str(sub_tree)]["ssms"]:
-            try:
-                ssmli.append(chrom_pos_dict[mut_data["ssms"][ssm]["name"]]["id"])
-            except Exception as e:
-                print(
-                    "Error in appending to mutation list. Error in base case appending ssm to ssmli"
-                )
-                print(e)
-                # print(str(subTree))
-                pass
-
-        newsubtree["clone_mutations"] = ssmli
-        _assign_frequencies(newsubtree, sub_tree, tree_data, purity)
-        return newsubtree
+    _assign_frequencies(newsubtree, sub_tree, tree_data, purity)
+    return newsubtree
 
 
 def main(args):
@@ -1290,6 +1314,19 @@ def determine_NMD(chrom, pos, num_windows, len_indel, ensembl, transcriptID=None
 
 
 
+def _non_negative_int(value):
+    """argparse type for a count that must not be negative.
+
+    :param value: raw CLI string
+    :return: the parsed int
+    :raises argparse.ArgumentTypeError: if ``value`` is not a non-negative int
+    """
+    parsed = int(value)
+    if parsed < 0:
+        raise argparse.ArgumentTypeError(f"expected a non-negative integer, got {value}")
+    return parsed
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Process input files and parameters")
     parser.add_argument("--maf_file", required=True, help="Path to the MAF file")
@@ -1346,9 +1383,10 @@ def parse_args():
     )
     parser.add_argument(
         "--top_n_trees",
-        type=int,
+        type=_non_negative_int,
         default=10,
-        help="Number of top trees (by llh, highest first) to include, default is 10",
+        help="Number of top trees (by llh, highest first) to include, default is "
+        "10; pass a value larger than the tree count to keep every tree",
     )
 
     return parser.parse_args()
