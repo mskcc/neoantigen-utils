@@ -24,6 +24,7 @@ except ImportError:  # pragma: no cover - exercised only where pyensembl is abse
     Genome = EnsemblRelease = None
 
 from neoantigen_utils.generate_mut_fasta import skip_lines_start_with
+from neoantigen_utils.hla_string import parse_polysolver_allele
 
 VERSION = "1.10"
 
@@ -38,12 +39,22 @@ def compute_purity(tree_data):
     :param tree_data: one entry of summ.json's ``trees`` dict, carrying
                       ``structure`` and ``populations``
     :return: purity, strictly greater than 0
-    :raises ValueError: if the tree has no root children or they sum to 0
+    :raises ValueError: if the tree has no root children, a root child is
+                        missing from ``populations`` (or has no
+                        ``cellular_prevalence`` entries), or the prevalences
+                        sum to 0
     """
     roots = tree_data["structure"].get("0", [])
-    purity = sum(
-        tree_data["populations"][str(r)]["cellular_prevalence"][0] for r in roots
-    )
+    try:
+        purity = sum(
+            tree_data["populations"][str(r)]["cellular_prevalence"][0] for r in roots
+        )
+    except (KeyError, IndexError) as e:
+        raise ValueError(
+            "Cannot compute purity: a root child clone is missing from "
+            "populations, or has no cellular_prevalence entries -- the tree "
+            "structure and populations disagree."
+        ) from e
     if purity == 0:
         raise ValueError(
             "Cannot normalise clone frequencies: purity is 0 "
@@ -83,12 +94,15 @@ def select_top_trees(trees, n):
     :raises ValueError: if ``n`` is negative -- a negative slice would silently
                         return the *worst*-fitting trees
     """
+    # Re-validated here (in addition to the CLI's _non_negative_int argparse
+    # type) so this function stays safe for callers other than main()'s
+    # argparse-validated path -- e.g. tests or future direct callers.
     if n < 0:
         raise ValueError(f"top_n_trees must be >= 0, got {n}")
     return sorted(trees, key=lambda t: trees[t]["llh"], reverse=True)[:n]
 
 
-def _assign_frequencies(node, sub_tree, tree_data, purity):
+def _assign_frequencies(node, start, sub_tree, tree_data, purity):
     """Set the inclusive, exclusive, and placeholder frequencies on one node.
 
     ``X`` is the cellular prevalence normalised by purity, with the germline
@@ -97,15 +111,30 @@ def _assign_frequencies(node, sub_tree, tree_data, purity):
     ``X``. Children must already be populated on ``node``.
 
     :param node:      topology dict being built; mutated in place
+    :param start:     True only for the germline root -- the single source of
+                      truth for root-ness, so this agrees with the
+                      ``clone_mutations`` gate in :func:`build_topology`
+                      instead of re-deriving it from ``sub_tree``
     :param sub_tree:  clone id for this node
     :param tree_data: one entry of summ.json's ``trees`` dict
     :param purity:    sample purity, from :func:`compute_purity`
+    :raises ValueError: if a non-root clone is missing from ``populations``
+                        (or has no ``cellular_prevalence`` entries)
     """
-    node["X"] = (
-        1.0
-        if int(sub_tree) == 0
-        else tree_data["populations"][str(sub_tree)]["cellular_prevalence"][0] / purity
-    )
+    if start:
+        node["X"] = 1.0
+    else:
+        try:
+            node["X"] = (
+                tree_data["populations"][str(sub_tree)]["cellular_prevalence"][0]
+                / purity
+            )
+        except (KeyError, IndexError) as e:
+            raise ValueError(
+                f"Clone {sub_tree} is missing from this tree's populations "
+                "(or has no cellular_prevalence entries); the tree structure "
+                "and populations disagree."
+            ) from e
     node["x"] = node["X"] - sum(c["X"] for c in node["children"])
     node["new_x"] = 0.0
 
@@ -175,9 +204,8 @@ def build_topology(
         "clone_id": int(sub_tree),
         "clone_mutations": [],
         "children": [],
-        "X": 0,
-        "x": 0,
-        "new_x": 0,
+        # X, x, new_x are set below by _assign_frequencies, once children are
+        # populated -- no placeholder needed here.
     }
 
     for item in tree_data["structure"].get(str(sub_tree), []):
@@ -193,7 +221,7 @@ def build_topology(
             sub_tree, treefile, chrom_pos_dict, mut_data
         )
 
-    _assign_frequencies(newsubtree, sub_tree, tree_data, purity)
+    _assign_frequencies(newsubtree, start, sub_tree, tree_data, purity)
     return newsubtree
 
 
@@ -408,10 +436,20 @@ def main(args):
 
     # TODO format HLA_gene input data, depending on format inputted.  They should look like this A*02:01
     # this will be setup for polysolver winners output
+    #
+    # Shares its low-level field parsing with hla_string.parse_polysolver via
+    # parse_polysolver_allele rather than reimplementing it, so a future fix
+    # to POLYSOLVER parsing (e.g. the 3-digit-field truncation bug that
+    # motivated hla_string.py) applies here too. The output format differs
+    # ("A*02:01" here vs. "HLA-A02:01" from hla_string) because this feeds a
+    # different downstream consumer (the HLA_genes field of this script's
+    # JSON output, not netMHCpan's -a argument).
     def convert_polysolver_hla(polyHLA):
-        allele = polyHLA[4]
-        shortHLA = polyHLA.split("_")[2:4]
-        return allele.upper() + "*" + shortHLA[0] + ":" + shortHLA[1]
+        parsed = parse_polysolver_allele(polyHLA)
+        if parsed is None:
+            raise ValueError(f"Could not parse POLYSOLVER HLA entry: {polyHLA!r}")
+        gene, field1, field2 = parsed
+        return f"{gene}*{field1}:{field2}"
 
     HLA_gene_li = []
     with open(args.HLA_genes, "r") as f:
