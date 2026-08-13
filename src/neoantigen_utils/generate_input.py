@@ -23,86 +23,181 @@ try:
 except ImportError:  # pragma: no cover - exercised only where pyensembl is absent
     Genome = EnsemblRelease = None
 
-VERSION = 1.9
+from neoantigen_utils.generate_mut_fasta import skip_lines_start_with
+
+VERSION = "1.10"
+
+
+def compute_purity(tree_data):
+    """Sum the raw cellular prevalences of the root clone's children.
+
+    PhyloWGS node 0 is the germline population; the tumour clones hanging off
+    it sum to the sample purity. Inclusive clone frequencies are normalised by
+    this value so that the root's children sum to exactly 1.0.
+
+    :param tree_data: one entry of summ.json's ``trees`` dict, carrying
+                      ``structure`` and ``populations``
+    :return: purity, strictly greater than 0
+    :raises ValueError: if the tree has no root children or they sum to 0
+    """
+    roots = tree_data["structure"].get("0", [])
+    purity = sum(
+        tree_data["populations"][str(r)]["cellular_prevalence"][0] for r in roots
+    )
+    if purity == 0:
+        raise ValueError(
+            "Cannot normalise clone frequencies: purity is 0 "
+            "(no root children, or their cellular prevalences sum to 0)."
+        )
+    return purity
+
+
+def read_maf(maf_file):
+    """Read a MAF, skipping the leading ``#version`` comment lines.
+
+    TEMPO and Genome Nexus emit MAFs with a leading ``#version`` line. Without
+    skipping it pandas infers a single column from it and every data row raises
+    ``ParserError``. This delegates to
+    :func:`~neoantigen_utils.generate_mut_fasta.skip_lines_start_with`, which
+    consumes only the *leading* ``#`` lines; ``pd.read_csv(comment="#")`` would
+    instead truncate any data row at a literal ``#`` anywhere in it, silently
+    turning the remaining annotation columns into ``NaN``.
+
+    :param maf_file: path to the MAF
+    :return: the MAF as a DataFrame
+    """
+    return skip_lines_start_with(maf_file, "#", delimiter="\t")
+
+
+def select_top_trees(trees, n):
+    """Return the ``n`` tree keys from ``trees`` with the highest ``llh``.
+
+    PhyloWGS ``llh`` is a log-likelihood; values closer to 0 indicate a
+    better-fitting tree, so this sorts descending.
+
+    :param trees: summ.json's ``trees`` dict, keyed by tree id
+    :param n: number of trees to keep; if ``n`` exceeds the number of
+              available trees, all tree keys are returned
+    :return: list of tree keys, sorted by descending llh, length
+             ``min(n, len(trees))``
+    :raises ValueError: if ``n`` is negative -- a negative slice would silently
+                        return the *worst*-fitting trees
+    """
+    if n < 0:
+        raise ValueError(f"top_n_trees must be >= 0, got {n}")
+    return sorted(trees, key=lambda t: trees[t]["llh"], reverse=True)[:n]
+
+
+def _assign_frequencies(node, sub_tree, tree_data, purity):
+    """Set the inclusive, exclusive, and placeholder frequencies on one node.
+
+    ``X`` is the cellular prevalence normalised by purity, with the germline
+    root pinned to 1.0. ``x`` is the exclusive frequency: ``X`` less the
+    inclusive frequencies of the node's children, so a leaf's ``x`` equals its
+    ``X``. Children must already be populated on ``node``.
+
+    :param node:      topology dict being built; mutated in place
+    :param sub_tree:  clone id for this node
+    :param tree_data: one entry of summ.json's ``trees`` dict
+    :param purity:    sample purity, from :func:`compute_purity`
+    """
+    node["X"] = (
+        1.0
+        if int(sub_tree) == 0
+        else tree_data["populations"][str(sub_tree)]["cellular_prevalence"][0] / purity
+    )
+    node["x"] = node["X"] - sum(c["X"] for c in node["children"])
+    node["new_x"] = 0.0
+
+
+def _collect_clone_mutations(sub_tree, treefile, chrom_pos_dict, mut_data):
+    """Map one clone's PhyloWGS ssm ids onto MAF mutation ids.
+
+    Individual ssms that cannot be resolved are dropped rather than aborting the
+    run -- a PhyloWGS ssm may legitimately have no matching MAF record. The
+    number dropped is reported so a silently truncated clone is visible in the
+    log instead of only showing up as per-mutation noise.
+
+    :param sub_tree:       clone id for this node
+    :param treefile:       per-tree JSON carrying ``mut_assignments``
+    :param chrom_pos_dict: mutation-name to record mapping
+    :param mut_data:       parsed mutation JSON carrying ``ssms``
+    :return: list of resolved mutation ids
+    :raises KeyError: if the clone is absent from ``mut_assignments`` -- that
+                      means the tree JSON and summ.json disagree, which would
+                      silently emit a mutation-less clone if tolerated
+    """
+    try:
+        ssms = treefile["mut_assignments"][str(sub_tree)]["ssms"]
+    except KeyError as e:
+        raise KeyError(
+            f"Clone {sub_tree} is missing from the tree file's mut_assignments; "
+            "the tree JSON and summ.json disagree on this tree's clones."
+        ) from e
+
+    ssmli = []
+    dropped = 0
+    for ssm in ssms:
+        try:
+            ssmli.append(chrom_pos_dict[mut_data["ssms"][ssm]["name"]]["id"])
+        except Exception as e:
+            dropped += 1
+            print(f"Clone {sub_tree}: could not resolve ssm {ssm} to a mutation id")
+            print(e)
+
+    if dropped:
+        print(
+            f"Clone {sub_tree}: dropped {dropped} of {len(ssms)} mutations "
+            "that could not be resolved."
+        )
+    return ssmli
+
+
+def build_topology(
+    sub_tree, start, tree_data, treefile, chrom_pos_dict, mut_data, purity
+):
+    """Recursively build one sample tree's topology dict.
+
+    :param sub_tree:       clone id for this node
+    :param start:          True only for the outermost call, forcing id 0
+    :param tree_data:      one entry of summ.json's ``trees`` dict
+    :param treefile:       per-tree JSON carrying ``mut_assignments``
+    :param chrom_pos_dict: mutation-name to record mapping
+    :param mut_data:       parsed mutation JSON carrying ``ssms``
+    :param purity:         sample purity, from :func:`compute_purity`; divides
+                           each non-root clone's cellular prevalence
+    :return: topology dict for this node and its descendants
+    """
+    if start:
+        sub_tree = 0
+
+    newsubtree = {
+        "clone_id": int(sub_tree),
+        "clone_mutations": [],
+        "children": [],
+        "X": 0,
+        "x": 0,
+        "new_x": 0,
+    }
+
+    for item in tree_data["structure"].get(str(sub_tree), []):
+        newsubtree["children"].append(
+            build_topology(
+                item, False, tree_data, treefile, chrom_pos_dict, mut_data, purity
+            )
+        )
+
+    # The germline root carries no mutations of its own.
+    if not start:
+        newsubtree["clone_mutations"] = _collect_clone_mutations(
+            sub_tree, treefile, chrom_pos_dict, mut_data
+        )
+
+    _assign_frequencies(newsubtree, sub_tree, tree_data, purity)
+    return newsubtree
 
 
 def main(args):
-
-    def makeChild(subTree, start):
-        if start:
-            subTree = 0
-
-        newsubtree = {
-            "clone_id": int(subTree),
-            "clone_mutations": [],
-            "children": [],
-            "X": 0,
-            "x": 0,
-            "new_x": 0,
-        }
-
-        if str(subTree) in trees[tree]["structure"]:
-            for item in trees[tree]["structure"][str(subTree)]:
-
-                child_dict = makeChild(item, False)
-
-                newsubtree["children"].append(child_dict)
-
-            try:
-                ssmli = []
-                if start:
-                    pass
-                else:
-                    for ssm in treefile["mut_assignments"][str(subTree)]["ssms"]:
-                        ssmli.append(
-                            chrom_pos_dict[mut_data["ssms"][ssm]["name"]]["id"]
-                        )
-                newsubtree["clone_mutations"] = ssmli
-                newsubtree["X"] = trees[tree]["populations"][str(subTree)][
-                    "cellular_prevalence"
-                ][0]
-                newsubtree["x"] = trees[tree]["populations"][str(subTree)][
-                    "cellular_prevalence"
-                ][0]
-                newsubtree["new_x"] = 0.0
-            except Exception as e:
-                print("Error in adding new subtree. Error not in base case**")
-                print(subTree)
-                print(e)
-                pass
-
-            return newsubtree
-
-        else:
-            # Base Case
-            # make childrendict and return it
-            ssmli = []
-
-            for ssm in treefile["mut_assignments"][str(subTree)]["ssms"]:
-                try:
-                    ssmli.append(chrom_pos_dict[mut_data["ssms"][ssm]["name"]]["id"])
-                except Exception as e:
-                    print(
-                        "Error in appending to mutation list. Error in base case appending ssm to ssmli"
-                    )
-                    print(e)
-                    # print(str(subTree))
-                    pass
-
-            try:
-                newsubtree["clone_mutations"] = ssmli
-                newsubtree["X"] = trees[tree]["populations"][str(subTree)][
-                    "cellular_prevalence"
-                ][0]
-                newsubtree["x"] = trees[tree]["populations"][str(subTree)][
-                    "cellular_prevalence"
-                ][0]
-                newsubtree["new_x"] = 0.0
-            except Exception as e:
-                print("Error in adding new subtree. Error in base case")
-                print(e)
-                pass
-            return newsubtree
 
     with open(args.summary_file, "r") as f:
         # Load the JSON data into a dictionary
@@ -119,7 +214,7 @@ def main(args):
     )  # Used for matching mutation without the subsititution information from netMHCpan to phyloWGS output
     gene_dict = {}
 
-    mafdf = pd.read_csv(args.maf_file, delimiter="\t")
+    mafdf = read_maf(args.maf_file)
 
     for index, row in mafdf.iterrows():
         if (
@@ -289,14 +384,21 @@ def main(args):
 
     trees = summ_data["trees"]
 
-    for tree in trees:
+    for tree in select_top_trees(trees, args.top_n_trees):
 
         inner_sample_tree_dict = {"topology": [], "score": trees[tree]["llh"]}
         with open("./" + args.tree_directory + "/" + str(tree) + ".json", "r") as f:
             # Load the JSON data into a dictionary
             treefile = json.load(f)
 
-        bigtree = makeChild(tree, True)
+        try:
+            purity = compute_purity(trees[tree])
+        except ValueError as e:
+            raise ValueError(f"Tree {tree}: {e}") from e
+
+        bigtree = build_topology(
+            tree, True, trees[tree], treefile, chrom_pos_dict, mut_data, purity
+        )
 
         inner_sample_tree_dict["topology"] = bigtree
 
@@ -1212,6 +1314,19 @@ def determine_NMD(chrom, pos, num_windows, len_indel, ensembl, transcriptID=None
 
 
 
+def _non_negative_int(value):
+    """argparse type for a count that must not be negative.
+
+    :param value: raw CLI string
+    :return: the parsed int
+    :raises argparse.ArgumentTypeError: if ``value`` is not a non-negative int
+    """
+    parsed = int(value)
+    if parsed < 0:
+        raise argparse.ArgumentTypeError(f"expected a non-negative integer, got {value}")
+    return parsed
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Process input files and parameters")
     parser.add_argument("--maf_file", required=True, help="Path to the MAF file")
@@ -1265,6 +1380,13 @@ def parse_args():
 
     parser.add_argument(
         "--kD_cutoff", default=500, help="Cutoff value for the kD, default is 500",
+    )
+    parser.add_argument(
+        "--top_n_trees",
+        type=_non_negative_int,
+        default=10,
+        help="Number of top trees (by llh, highest first) to include, default is "
+        "10; pass a value larger than the tree count to keep every tree",
     )
 
     return parser.parse_args()
