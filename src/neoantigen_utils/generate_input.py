@@ -63,6 +63,28 @@ def compute_purity(tree_data):
     return purity
 
 
+def convert_polysolver_hla(polyHLA):
+    """Format one raw POLYSOLVER allele field as ``<gene>*<field1>:<field2>``.
+
+    Shares its low-level field parsing with hla_string.parse_polysolver via
+    parse_polysolver_allele rather than reimplementing it, so a future fix
+    to POLYSOLVER parsing (e.g. the 3-digit-field truncation bug that
+    motivated hla_string.py) applies here too. The output format differs
+    ("A*02:01" here vs. "HLA-A02:01" from hla_string) because this feeds a
+    different downstream consumer (the HLA_genes field of this script's
+    JSON output, not netMHCpan's -a argument).
+
+    :param polyHLA: one raw allele field, e.g. ``hla_a_02_01_01``
+    :return: e.g. ``"A*02:01"``
+    :raises ValueError: if ``polyHLA`` doesn't match the expected shape
+    """
+    parsed = parse_polysolver_allele(polyHLA)
+    if parsed is None:
+        raise ValueError(f"Could not parse POLYSOLVER HLA entry: {polyHLA!r}")
+    gene, field1, field2 = parsed
+    return f"{gene}*{field1}:{field2}"
+
+
 def read_maf(maf_file):
     """Read a MAF, skipping the leading ``#version`` comment lines.
 
@@ -436,21 +458,6 @@ def main(args):
 
     # TODO format HLA_gene input data, depending on format inputted.  They should look like this A*02:01
     # this will be setup for polysolver winners output
-    #
-    # Shares its low-level field parsing with hla_string.parse_polysolver via
-    # parse_polysolver_allele rather than reimplementing it, so a future fix
-    # to POLYSOLVER parsing (e.g. the 3-digit-field truncation bug that
-    # motivated hla_string.py) applies here too. The output format differs
-    # ("A*02:01" here vs. "HLA-A02:01" from hla_string) because this feeds a
-    # different downstream consumer (the HLA_genes field of this script's
-    # JSON output, not netMHCpan's -a argument).
-    def convert_polysolver_hla(polyHLA):
-        parsed = parse_polysolver_allele(polyHLA)
-        if parsed is None:
-            raise ValueError(f"Could not parse POLYSOLVER HLA entry: {polyHLA!r}")
-        gene, field1, field2 = parsed
-        return f"{gene}*{field1}:{field2}"
-
     HLA_gene_li = []
     with open(args.HLA_genes, "r") as f:
         for line in f:

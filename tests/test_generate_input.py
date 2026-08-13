@@ -1,6 +1,11 @@
 import pytest
 
-from neoantigen_utils.generate_input import compute_purity, select_top_trees
+from neoantigen_utils.generate_input import (
+    _assign_frequencies,
+    compute_purity,
+    convert_polysolver_hla,
+    select_top_trees,
+)
 
 
 def make_tree_data(structure, prevalences):
@@ -49,6 +54,70 @@ class TestComputePurity:
         )
         with pytest.raises(ValueError):
             compute_purity(tree_data)
+
+    def test_root_child_missing_from_populations_raises_contextualized_error(self):
+        # structure lists clone 1 as a root child, but populations has no
+        # entry for it at all -- the tree structure and populations disagree.
+        tree_data = make_tree_data(structure={"0": [1]}, prevalences={"0": 1.0})
+        with pytest.raises(ValueError, match="missing from populations"):
+            compute_purity(tree_data)
+
+    def test_root_child_with_no_cellular_prevalence_entries_raises(self):
+        # Clone 1 is present in populations, but its cellular_prevalence list
+        # is empty -- the IndexError case, not the KeyError case.
+        tree_data = make_tree_data(structure={"0": [1]}, prevalences={"0": 1.0})
+        tree_data["populations"]["1"] = {"cellular_prevalence": []}
+        with pytest.raises(ValueError, match="missing from populations"):
+            compute_purity(tree_data)
+
+
+class TestAssignFrequenciesMalformedPopulations:
+    def test_non_root_clone_missing_from_populations_raises_contextualized_error(self):
+        node = {"children": []}
+        tree_data = {"populations": {}}
+        with pytest.raises(ValueError, match="missing from this tree's populations"):
+            _assign_frequencies(node, False, "5", tree_data, purity=1.0)
+
+    def test_non_root_clone_with_no_cellular_prevalence_entries_raises(self):
+        node = {"children": []}
+        tree_data = {"populations": {"5": {"cellular_prevalence": []}}}
+        with pytest.raises(ValueError, match="missing from this tree's populations"):
+            _assign_frequencies(node, False, "5", tree_data, purity=1.0)
+
+    def test_root_gets_x_one_from_start_flag_without_consulting_populations(self):
+        # Regression for the root-ness-desync fix: root-ness now comes purely
+        # from the `start` flag build_topology already threads through, not
+        # from re-deriving it via int(sub_tree) == 0. Proven here by giving
+        # clone "0" no populations entry at all -- if root-ness were still
+        # re-derived from sub_tree, this would be indistinguishable from the
+        # missing-clone case above and incorrectly raise.
+        node = {"children": []}
+        tree_data = {"populations": {}}
+        _assign_frequencies(node, True, "0", tree_data, purity=1.0)
+        assert node["X"] == 1.0
+
+
+class TestConvertPolysolverHla:
+    """convert_polysolver_hla shares hla_string.parse_polysolver_allele's field
+    parsing rather than reimplementing it -- these are a regression guard for
+    that sharing, mirroring the equivalent hla_string tests."""
+
+    def test_two_digit_second_field(self):
+        assert convert_polysolver_hla("hla_a_02_01_01") == "A*02:01"
+
+    def test_three_digit_second_field_is_not_truncated(self):
+        # Not a regression guard against this function's own prior behavior --
+        # its previous split('_')[2:4] logic already handled this correctly.
+        # It's a guard against the *shared* parser drifting in a way that only
+        # this call site's tests would catch.
+        assert convert_polysolver_hla("hla_b_18_177") == "B*18:177"
+
+    def test_unparseable_entry_raises_value_error(self):
+        # The previous inline logic raised a bare, uncontextualized IndexError
+        # here (list index out of range on the split result); the shared
+        # parser gives a clear ValueError instead.
+        with pytest.raises(ValueError, match="Could not parse"):
+            convert_polysolver_hla("garbage")
 
 
 from neoantigen_utils.generate_input import build_topology
