@@ -27,6 +27,7 @@ _HLAHD_CLASS_I_LOCI = {"A", "B", "C"}
 
 
 def _is_hlahd_format(text: str) -> bool:
+    """Sniff whether `text` is HLA-HD (vs. POLYSOLVER) by looking for `HLA-<gene>*`."""
     return bool(re.search(r"HLA-[A-Za-z0-9]*\*", text))
 
 
@@ -62,6 +63,16 @@ def parse_hlahd(text: str) -> list[str]:
 
         fields = line.split("\t")
         locus = fields[0]
+
+        # Every real HLA-HD row has a locus label plus at least one allele
+        # field -- even a fully untyped one ("A\tNot typed\tNot typed"). A row
+        # with no allele column at all can't be a real row, so warn instead of
+        # silently dropping it the same way an expected class II locus (DRB1,
+        # DQB1, ...) is dropped.
+        if len(fields) < 2:
+            print(f"WARN: skipping unparseable HLA entry '{line}'", file=sys.stderr)
+            continue
+
         if locus not in _HLAHD_CLASS_I_LOCI:
             continue
 
@@ -98,6 +109,7 @@ def generate_hla_string(text: str) -> str:
 
 
 def parse_args(argv=None):
+    """Parse CLI args: `-f FILE` (required to do anything), `-v`/`--version`."""
     parser = argparse.ArgumentParser(
         prog="generateHLAString.sh",
         description="Build the netMHCpan -a allele string from an HLA typing result.",
@@ -108,13 +120,22 @@ def parse_args(argv=None):
 
 
 def main(argv=None):
+    """Parse argv, print the netMHCpan `-a` allele string, and exit 1 on failure."""
     args = parse_args(argv)
-    if not args.file:
+    # `-f` omitted entirely (args.file is None) just prints usage. An explicitly
+    # passed but empty path ("") is not the same thing -- it's an unusable
+    # argument, not "no flag given" -- and must be treated as an error, not
+    # silently accepted.
+    if args.file is None:
         print("USAGE: generateHLASTRING.sh -f [HLA_FILE]")
         return
 
-    with open(args.file) as f:
-        text = f.read()
+    try:
+        with open(args.file) as f:
+            text = f.read()
+    except OSError as e:
+        print(f"ERROR: could not read {args.file!r}: {e}", file=sys.stderr)
+        sys.exit(1)
 
     try:
         result = generate_hla_string(text)
@@ -126,6 +147,7 @@ def main(argv=None):
 
 
 def console():
+    """Zero-argument console entry point (parses `sys.argv` then runs `main`)."""
     main()
 
 

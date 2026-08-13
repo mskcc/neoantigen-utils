@@ -86,6 +86,25 @@ def test_hlahd_not_typed_is_dropped_silently(capsys):
     assert "Not typed" not in capsys.readouterr().err
 
 
+def test_hlahd_class_ii_locus_is_dropped_silently(capsys):
+    # DRB1/DQB1/etc are an expected, routine part of real HLA-HD output --
+    # not a parse failure -- so dropping them must stay silent.
+    hla_string.generate_hla_string(HLAHD_RESULT)
+    assert capsys.readouterr().err == ""
+
+
+def test_hlahd_malformed_line_is_warned_not_silently_dropped(capsys):
+    # A line with no allele columns at all can't be a real HLA-HD row (every
+    # real row -- even a fully "Not typed" one -- has at least one allele
+    # field). Silently treating it the same as an expected class II skip
+    # would hide a misdetected format or a corrupted file with no diagnostic
+    # trail.
+    text = "A\tHLA-A*02:01:01\tHLA-A*24:02:01\nXYZ\n"
+    result = hla_string.generate_hla_string(text)
+    assert result == "HLA-A02:01,HLA-A24:02"
+    assert "XYZ" in capsys.readouterr().err
+
+
 def test_empty_input_raises():
     with pytest.raises(ValueError):
         hla_string.generate_hla_string("")
@@ -114,6 +133,24 @@ def test_main_exits_one_on_unparseable_file(tmp_path):
     with pytest.raises(SystemExit) as exc:
         hla_string.main(["-f", str(input_file)])
     assert exc.value.code == 1
+
+
+def test_main_dash_f_empty_string_is_an_error_not_usage(capsys):
+    # -f "" is an explicitly-passed, unusable path -- not the same as omitting
+    # -f entirely. Treating them alike would let a pipeline that hands in an
+    # unresolved/empty variable "succeed" with no alleles, or feed usage text
+    # into netMHCpan's -a argument.
+    with pytest.raises(SystemExit) as exc:
+        hla_string.main(["-f", ""])
+    assert exc.value.code == 1
+    assert "USAGE" not in capsys.readouterr().out
+
+
+def test_main_missing_file_exits_one_with_structured_error(capsys):
+    with pytest.raises(SystemExit) as exc:
+        hla_string.main(["-f", "/no/such/file.txt"])
+    assert exc.value.code == 1
+    assert "ERROR" in capsys.readouterr().err
 
 
 def test_console_prints_version_and_exits_zero(monkeypatch, capsys):
