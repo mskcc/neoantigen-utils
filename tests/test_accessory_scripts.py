@@ -7,8 +7,6 @@ convertannotjson / format_netmhcpan are follow-up work.
 
 import subprocess
 
-import pytest
-
 
 def test_convertannotjson_imports_and_has_entry():
     from neoantigen_utils import convertannotjson as m
@@ -40,25 +38,10 @@ def test_format_netmhcpan_imports_and_has_console_entry():
     assert callable(m.netMHCpan_out_reformat)
 
 
-def test_hla_string_shim_execs_bundled_script_version():
-    # The shim forwards to the bundled generateHLAString.sh; ``-v`` prints the
-    # version and exits 0.
-    from neoantigen_utils import hla_string
+def test_hla_string_imports_and_has_console_entry():
+    # Fuller functional tests live in test_hla_string.py.
+    from neoantigen_utils import hla_string as hs
 
-    with pytest.raises(SystemExit) as exc:
-        import sys
-
-        old = sys.argv
-        sys.argv = ["generateHLAString.sh", "-v"]
-        try:
-            hla_string.console()
-        finally:
-            sys.argv = old
-    assert exc.value.code == 0
-
-
-def test_bundled_hla_script_is_present():
-    from importlib import resources
-
-    path = resources.files("neoantigen_utils.data") / "generateHLAString.sh"
-    assert path.is_file()
+    assert callable(hs.main)
+    assert callable(hs.console)
+    assert callable(hs.generate_hla_string)

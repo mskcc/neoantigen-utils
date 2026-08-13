@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "neoantigen-utils"
-version = "1.6.0"
+version = "1.6.1"
 description = "Helper scripts for the MSK neoantigen pipeline: mutated/alt-transcript peptide FASTA generation and neoantigen input construction."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -41,8 +41,6 @@ dev = ["pytest"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/neoantigen_utils"]
-# Ship the bundled shell script (data files inside the package are included).
-artifacts = ["src/neoantigen_utils/data/*.sh"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
