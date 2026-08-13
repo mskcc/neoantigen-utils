@@ -93,6 +93,22 @@ def test_hlahd_class_ii_locus_is_dropped_silently(capsys):
     assert capsys.readouterr().err == ""
 
 
+def test_hlahd_total_misdetection_warns_once_aggregated(capsys):
+    # If every line is dropped by the locus filter (e.g. a POLYSOLVER file
+    # misdetected as HLA-HD, or a genuine HLA-HD file with no A/B/C rows), the
+    # per-line skip alone leaves no trace of why nothing was parsed. This is
+    # deliberately a single aggregated warning, not one per dropped line --
+    # every real HLA-HD file has plenty of expected non-class-I lines
+    # (DRB1, DQB1, ...), and warning on each of those would fire on every
+    # well-formed file.
+    text = "DRB1\tHLA-DRB1*01:01:01\tHLA-DRB1*03:01:01\n"
+    with pytest.raises(ValueError):
+        hla_string.generate_hla_string(text)
+    err = capsys.readouterr().err
+    assert "no HLA-A/B/C locus lines found among 1 line" in err
+    assert err.count("WARN") == 1
+
+
 def test_hlahd_malformed_line_is_warned_not_silently_dropped(capsys):
     # A line with no allele columns at all can't be a real HLA-HD row (every
     # real row -- even a fully "Not typed" one -- has at least one allele

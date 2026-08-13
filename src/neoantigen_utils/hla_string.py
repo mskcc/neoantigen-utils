@@ -27,8 +27,32 @@ _HLAHD_CLASS_I_LOCI = {"A", "B", "C"}
 
 
 def _is_hlahd_format(text: str) -> bool:
-    """Sniff whether `text` is HLA-HD (vs. POLYSOLVER) by looking for `HLA-<gene>*`."""
+    """Sniff whether ``text`` is HLA-HD (``HLA-<gene>*...``) rather than
+    POLYSOLVER output, by looking for HLA-HD's asterisk-named alleles
+    anywhere in the file."""
     return bool(re.search(r"HLA-[A-Za-z0-9]*\*", text))
+
+
+def parse_polysolver_allele(item: str):
+    """Parse one raw POLYSOLVER allele field, e.g. ``hla_a_02_01_01``.
+
+    Shared by :func:`parse_polysolver` and
+    :func:`neoantigen_utils.generate_input.convert_polysolver_hla`, which
+    format the parsed fields differently for their own consumers -- keeping
+    the parsing itself in one place means a future POLYSOLVER format fix
+    (e.g. the 3-digit-field truncation bug described in this module's
+    docstring) only needs to be made once.
+
+    :param item: one raw allele field, not the ``HLA-<gene>`` label token
+    :return: ``(gene, field1, field2)``, all upper-cased, or ``None`` (after
+             printing a warning to stderr) if ``item`` doesn't match the
+             expected ``hla_<gene>_<field1>_<field2>[_...]`` shape
+    """
+    parts = item.upper().split("_")
+    if len(parts) < 4 or parts[0] != "HLA" or not parts[1] or not parts[2] or not parts[3]:
+        print(f"WARN: skipping unparseable HLA entry '{item}'", file=sys.stderr)
+        return None
+    return parts[1], parts[2], parts[3]
 
 
 def parse_polysolver(text: str) -> list[str]:
@@ -43,12 +67,11 @@ def parse_polysolver(text: str) -> list[str]:
         if item.upper().startswith("HLA-"):
             continue
 
-        parts = item.upper().split("_")
-        if len(parts) < 4 or parts[0] != "HLA" or not parts[1] or not parts[2] or not parts[3]:
-            print(f"WARN: skipping unparseable HLA entry '{item}'", file=sys.stderr)
+        parsed = parse_polysolver_allele(item)
+        if parsed is None:
             continue
 
-        _prefix, gene, field1, field2 = parts[0], parts[1], parts[2], parts[3]
+        gene, field1, field2 = parsed
         alleles.append(f"HLA-{gene}{field1}:{field2}")
 
     return alleles
@@ -57,9 +80,12 @@ def parse_polysolver(text: str) -> list[str]:
 def parse_hlahd(text: str) -> list[str]:
     """Parse HLA-HD *_final.result.txt content into two-field allele names."""
     alleles = []
+    lines_seen = 0
+    class_i_lines_seen = 0
     for line in text.replace("\r", "").split("\n"):
         if not line:
             continue
+        lines_seen += 1
 
         fields = line.split("\t")
         locus = fields[0]
@@ -74,7 +100,11 @@ def parse_hlahd(text: str) -> list[str]:
             continue
 
         if locus not in _HLAHD_CLASS_I_LOCI:
+            # Expected: HLA-HD reports every locus (DRB1, DQB1, ...), and only
+            # A/B/C are class I. Not warned per-line -- that would fire on
+            # every well-formed file -- see the aggregate check below instead.
             continue
+        class_i_lines_seen += 1
 
         # Only the first pair is taken. HLA-HD may report an alternative,
         # equally-scoring pair on the same line; emitting it would exceed
@@ -91,6 +121,16 @@ def parse_hlahd(text: str) -> list[str]:
 
             gene, field1, field2 = match.groups()
             alleles.append(f"HLA-{gene}{field1}:{field2}")
+
+    if lines_seen and not class_i_lines_seen:
+        # Every line was dropped by the locus filter -- most likely this file
+        # was misdetected as HLA-HD (or genuinely has no A/B/C rows), and the
+        # per-line skip above would otherwise leave no trace of why.
+        print(
+            f"WARN: no HLA-A/B/C locus lines found among {lines_seen} line(s) "
+            "of HLA-HD input",
+            file=sys.stderr,
+        )
 
     return alleles
 
@@ -109,18 +149,28 @@ def generate_hla_string(text: str) -> str:
 
 
 def parse_args(argv=None):
-    """Parse CLI args: `-f FILE` (required to do anything), `-v`/`--version`."""
+    """Parse CLI arguments.
+
+    :param argv: argument list, or ``None`` to use ``sys.argv``
+    :return: parsed ``Namespace``, with ``file`` set to ``None`` if ``-f``
+             was omitted entirely (an explicitly empty ``-f ""`` is left as
+             ``""``, distinct from omission, so :func:`main` can fail loudly
+             on it instead of silently printing usage)
+    """
     parser = argparse.ArgumentParser(
         prog="generateHLAString.sh",
         description="Build the netMHCpan -a allele string from an HLA typing result.",
     )
-    parser.add_argument("-f", dest="file", required=False, help="HLA typing result file")
+    parser.add_argument("-f", dest="file", default=None, help="HLA typing result file")
     parser.add_argument("-v", "--version", action="version", version=VERSION)
     return parser.parse_args(argv)
 
 
 def main(argv=None):
-    """Parse argv, print the netMHCpan `-a` allele string, and exit 1 on failure."""
+    """CLI entry point: parse args, resolve the HLA string, print it or exit(1).
+
+    :param argv: argument list, or ``None`` to use ``sys.argv``
+    """
     args = parse_args(argv)
     # `-f` omitted entirely (args.file is None) just prints usage. An explicitly
     # passed but empty path ("") is not the same thing -- it's an unusable
@@ -147,7 +197,7 @@ def main(argv=None):
 
 
 def console():
-    """Zero-argument console entry point (parses `sys.argv` then runs `main`)."""
+    """Zero-argument console entry point (parses ``sys.argv`` then runs ``main``)."""
     main()
 
 
