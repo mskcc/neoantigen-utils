@@ -4,6 +4,7 @@ import os
 
 import pytest
 
+from neoantigen_utils.cbioportal_export import export_from_manifest
 from neoantigen_utils.cbioportal_study import StudyError, build_study, load_sample
 
 ROOT = {
@@ -280,3 +281,22 @@ def test_build_study_rejects_clone_id_above_entity_cap(tmp_path):
         build_study([sample], "study_1", str(tmp_path / "study"))
     assert "SAMPLE_1" in str(excinfo.value)
     assert "64" in str(excinfo.value)
+
+
+def test_export_from_manifest_builds_a_study(tmp_path):
+    annotated = tmp_path / "s1_annotated.json"
+    tree = tmp_path / "s1.json"
+    annotated.write_text(json.dumps(ANNOTATED))
+    tree.write_text(json.dumps(TREE))
+
+    manifest = tmp_path / "manifest.csv"
+    manifest.write_text(
+        "sample_id,patient_id,annotated_json,tree_json\n" "SAMPLE_1,PATIENT_1,{},{}\n".format(annotated, tree)
+    )
+
+    out = tmp_path / "study"
+    export_from_manifest(str(manifest), "study_1", str(out))
+
+    clinical = (out / "data_clinical_sample.txt").read_text()
+    assert "SAMPLE_1" in clinical
+    assert (out / "data_neoantigen_quality.txt").exists()

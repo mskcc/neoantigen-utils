@@ -37,6 +37,7 @@ dev = ["pytest"]
 "format_netmhcpan_output.py" = "neoantigen_utils.format_netmhcpan_output:console"
 "generateHLAString.sh" = "neoantigen_utils.hla_string:console"
 "annotate_rna.py" = "neoantigen_utils.annotate_rna:main"
+"cbioportal_export.py" = "neoantigen_utils.cbioportal_export:main"
 "prepare_fusion_fasta.py" = "neoantigen_utils.prepare_fusion_fasta:main"
 
 [tool.hatch.build.targets.wheel]
