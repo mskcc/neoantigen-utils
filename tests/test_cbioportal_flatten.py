@@ -235,3 +235,20 @@ def test_validate_rejects_prevalence_not_summing_to_one():
 def test_validate_rejects_duplicate_clone_ids():
     with pytest.raises(FlattenError, match="duplicate clone"):
         validate_tree_nodes(_rows((0, -1, 0.5), (0, 0, 0.5)))
+
+
+def _tree_rows(tree_idx, *specs):
+    return [dict(row, tree_idx=tree_idx) for row in _rows(*specs)]
+
+
+def test_validate_checks_each_tree_separately():
+    # Taken in aggregate these rows sum to 2.0 and carry two roots; the
+    # invariants hold per tree, so validation must accept them.
+    rows = _tree_rows(1, (0, -1, 0.5), (1, 0, 0.5)) + _tree_rows(2, (0, -1, 0.4), (1, 0, 0.6))
+    validate_tree_nodes(rows)
+
+
+def test_validate_names_the_offending_tree():
+    rows = _tree_rows(1, (0, -1, 0.5), (1, 0, 0.5)) + _tree_rows(2, (0, -1, 0.5), (1, -1, 0.5))
+    with pytest.raises(FlattenError, match="tree 2"):
+        validate_tree_nodes(rows)
