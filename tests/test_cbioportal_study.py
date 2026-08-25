@@ -207,12 +207,22 @@ def test_mutation_columns_include_unassigned_neoantigenic_mutation(tmp_path):
     assert rows["1_100_C_G"]["neoag.clone_id_t1"] == "1"
 
 
+def _read_tidy(out, filename):
+    """Split an emitted tidy table without eating trailing empty cells.
+
+    A primary sample's rows end in empty `new_x`/`tilde_x` fields, so `.strip()`
+    would take the trailing tabs off the final line along with the newline and
+    hide a dropped column.
+    """
+    return (out / "tidy" / filename).read_text().rstrip("\n").split("\n")
+
+
 def test_build_study_writes_tidytree_tables(tmp_path):
     sample = _write_sample(tmp_path)
     out = tmp_path / "study"
     build_study([sample], "study_1", str(out))
 
-    nodes = (out / "tidy" / "tree_nodes.tsv").read_text().strip().split("\n")
+    nodes = _read_tidy(out, "tree_nodes.tsv")
     assert nodes[0].split("\t") == [
         "sample_id",
         "tree_idx",
@@ -231,15 +241,18 @@ def test_build_study_writes_tidytree_tables(tmp_path):
     assert nodes[1].split("\t")[:4] == ["SAMPLE_1", "1", "0", "-1"]
     # tilde_x is absent on a primary sample: an empty cell, not the string "None".
     assert nodes[1].split("\t")[-2:] == ["", ""]
+    # The LAST data row must still carry every column. Trailing empty cells are
+    # where a dropped column hides, and the last row is where a parse loses them.
+    assert len(nodes[-1].split("\t")) == len(nodes[0].split("\t"))
 
-    scores = (out / "tidy" / "tree_scores.tsv").read_text().strip().split("\n")
+    scores = _read_tidy(out, "tree_scores.tsv")
     assert scores[0].split("\t") == ["sample_id", "tree_idx", "loglik"]
     assert scores[1].split("\t")[2] == "-12.5"
 
     neoantigens = (out / "tidy" / "neoantigens.tsv").read_text()
     assert "ALLAAVLAA" in neoantigens
 
-    clones = (out / "tidy" / "mutation_clones.tsv").read_text().strip().split("\n")
+    clones = _read_tidy(out, "mutation_clones.tsv")
     assert clones[0].split("\t") == ["sample_id", "tree_idx", "mutation_id", "clone_id"]
 
 
