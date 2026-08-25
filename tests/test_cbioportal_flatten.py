@@ -1,8 +1,12 @@
+import pytest
+
 from neoantigen_utils.cbioportal_flatten import (
+    FlattenError,
     flatten_mutation_clones,
     flatten_neoantigens,
     flatten_tree_nodes,
     flatten_tree_scores,
+    validate_tree_nodes,
 )
 
 
@@ -79,6 +83,8 @@ def test_flatten_tree_nodes_points_each_child_at_its_own_parent():
         ],
     )
     rows = flatten_tree_nodes(_tree(branching), "SAMPLE_1")
+    # The parent map collapses duplicates, so pin the row count too.
+    assert len(rows) == 4
     assert {r["clone_id"]: r["parent"] for r in rows} == {0: -1, 1: 0, 3: 1, 2: 0}
 
 
@@ -152,3 +158,80 @@ def test_flatten_mutation_clones_reads_pre_annotation_tree():
     assert sorted(r["mutation_id"] for r in rows) == ["1_100_C_G", "2_200_A_T"]
     assert {r["clone_id"] for r in rows} == {1}
     assert {r["tree_idx"] for r in rows} == {1}
+
+
+def _deep_topology():
+    # Real trees reach depth 6 and carry clone_mutations well below the root.
+    return {
+        "clone_id": 0,
+        "clone_mutations": [],
+        "children": [
+            {
+                "clone_id": 1,
+                "clone_mutations": ["1_100_C_G"],
+                "children": [
+                    {
+                        "clone_id": 2,
+                        "clone_mutations": ["2_200_A_T"],
+                        "children": [
+                            {"clone_id": 3, "clone_mutations": ["3_300_G_A"]},
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+
+
+def test_flatten_mutation_clones_attributes_deep_nodes():
+    rows = flatten_mutation_clones({"sample_trees": [{"score": -1.0, "topology": _deep_topology()}]}, "SAMPLE_1")
+    assert {r["mutation_id"]: r["clone_id"] for r in rows} == {
+        "1_100_C_G": 1,
+        "2_200_A_T": 2,
+        "3_300_G_A": 3,
+    }
+    assert len(rows) == 3
+
+
+def test_flatten_mutation_clones_numbers_trees_from_one():
+    other = {
+        "clone_id": 0,
+        "clone_mutations": [],
+        "children": [{"clone_id": 1, "clone_mutations": ["9_900_T_C"]}],
+    }
+    tree_data = {
+        "sample_trees": [
+            {"score": -1.0, "topology": _deep_topology()},
+            {"score": -2.0, "topology": other},
+        ]
+    }
+    rows = flatten_mutation_clones(tree_data, "SAMPLE_1")
+    assert sorted((r["tree_idx"], r["mutation_id"]) for r in rows) == [
+        (1, "1_100_C_G"),
+        (1, "2_200_A_T"),
+        (1, "3_300_G_A"),
+        (2, "9_900_T_C"),
+    ]
+
+
+def _rows(*specs):
+    return [{"sample_id": "SAMPLE_1", "tree_idx": 1, "clone_id": c, "parent": p, "x": x} for c, p, x in specs]
+
+
+def test_validate_accepts_a_well_formed_tree():
+    validate_tree_nodes(_rows((0, -1, 0.5), (1, 0, 0.5)))
+
+
+def test_validate_rejects_two_roots():
+    with pytest.raises(FlattenError, match="expected 1 root"):
+        validate_tree_nodes(_rows((0, -1, 0.5), (1, -1, 0.5)))
+
+
+def test_validate_rejects_prevalence_not_summing_to_one():
+    with pytest.raises(FlattenError, match="exclusive prevalence"):
+        validate_tree_nodes(_rows((0, -1, 0.5), (1, 0, 0.2)))
+
+
+def test_validate_rejects_duplicate_clone_ids():
+    with pytest.raises(FlattenError, match="duplicate clone"):
+        validate_tree_nodes(_rows((0, -1, 0.5), (0, 0, 0.5)))

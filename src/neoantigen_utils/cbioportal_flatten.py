@@ -6,6 +6,8 @@ children. `parent = -1` marks the root, which is the germline node and holds no
 mutations of its own.
 """
 
+from collections import defaultdict
+
 # new_x is present on every node; tilde_x only on recurrent samples. Both are
 # carried through untouched — the tidy table is the durable artifact and must
 # not silently drop upstream fields.
@@ -98,3 +100,27 @@ def flatten_mutation_clones(tree_data, sample_id):
                 )
             stack.extend(node.get("children", []))
     return rows
+
+
+class FlattenError(ValueError):
+    """Raised when the pipeline output violates an assumed invariant."""
+
+
+def validate_tree_nodes(rows, tolerance=1e-6):
+    """Check the invariants the export relies on. Raises FlattenError."""
+    by_tree = defaultdict(list)
+    for row in rows:
+        by_tree[row["tree_idx"]].append(row)
+
+    for tree_idx, tree_rows in sorted(by_tree.items()):
+        roots = [r for r in tree_rows if r["parent"] == -1]
+        if len(roots) != 1:
+            raise FlattenError("tree {}: expected 1 root, found {}".format(tree_idx, len(roots)))
+
+        clone_ids = [r["clone_id"] for r in tree_rows]
+        if len(set(clone_ids)) != len(clone_ids):
+            raise FlattenError("tree {}: duplicate clone ids".format(tree_idx))
+
+        total = sum(r["x"] for r in tree_rows)
+        if abs(total - 1.0) > tolerance:
+            raise FlattenError("tree {}: exclusive prevalence sums to {}, expected 1.0".format(tree_idx, total))
