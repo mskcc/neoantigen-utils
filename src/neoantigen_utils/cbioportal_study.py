@@ -217,8 +217,29 @@ def _clonality(clone_id, trunk):
     return "Clonal" if clone_id == trunk["clone_id"] else "Subclonal"
 
 
+class StudyError(ValueError):
+    """Raised when a study cannot be emitted without losing data."""
+
+
+def _check_clone_ids(samples):
+    """Clone entity rows stop at MAX_CLONE_ENTITY; a higher id would drop silently.
+
+    `render_data` emits one row per entity, so a value keyed on an entity that has
+    no row is written nowhere and reported nowhere. Fail loudly instead.
+    """
+    for sample in samples:
+        for row in sample["nodes"]:
+            if row["clone_id"] > MAX_CLONE_ENTITY:
+                raise StudyError(
+                    "sample {}: clone_id {} exceeds MAX_CLONE_ENTITY {}; raise the cap".format(
+                        sample["sample_id"], row["clone_id"], MAX_CLONE_ENTITY
+                    )
+                )
+
+
 def build_study(samples, study_id, outdir):
     """Write every cBioPortal file for `samples` into `outdir`."""
+    _check_clone_ids(samples)
     os.makedirs(outdir, exist_ok=True)
     sample_ids = [s["sample_id"] for s in samples]
 

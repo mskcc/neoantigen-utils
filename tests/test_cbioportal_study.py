@@ -1,7 +1,10 @@
+import copy
 import json
 import os
 
-from neoantigen_utils.cbioportal_study import build_study, load_sample
+import pytest
+
+from neoantigen_utils.cbioportal_study import StudyError, build_study, load_sample
 
 ROOT = {
     "clone_id": 0,
@@ -128,3 +131,88 @@ def test_build_study_writes_case_list_and_mutation_columns(tmp_path):
     assert header[:3] == ["SAMPLE_ID", "mutation_id", "neoag.clone_id_t1"]
     assert "neoag.ccf" in header
     assert "neoag.clonal" in header
+
+
+def test_neoantigen_profiles_carry_per_profile_sort_order(tmp_path):
+    """Kd is an affinity in nM: lower binds stronger, so it must sort ASC, not DESC."""
+    sample = _write_sample(tmp_path)
+    out = tmp_path / "study"
+    build_study([sample], "study_1", str(out))
+
+    # Anchored to the whole line: a bare "DESC" also matches "DESCRIPTION".
+    def sort_order(stable_id):
+        lines = (out / "meta_{}.txt".format(stable_id)).read_text().split("\n")
+        return next(line for line in lines if line.startswith("value_sort_order:"))
+
+    assert sort_order("neoantigen_kd") == "value_sort_order: ASC"
+    assert sort_order("neoantigen_kdwt") == "value_sort_order: ASC"
+    assert sort_order("neoantigen_quality") == "value_sort_order: DESC"
+    assert sort_order("neoantigen_r") == "value_sort_order: DESC"
+    assert sort_order("neoantigen_logc") == "value_sort_order: DESC"
+    assert sort_order("neoantigen_loga") == "value_sort_order: DESC"
+
+
+# A mitochondrial call assigned to no clone that still produces neoantigens. Real
+# samples carry these: 3OLTS has one such mutation yielding 2 neoantigens.
+UNASSIGNED_MUTATION = "MT_1000_A_T"
+
+
+def _write_unassigned_sample(tmp_path):
+    annotated = copy.deepcopy(ANNOTATED)
+    annotated["mutations"].append({"id": UNASSIGNED_MUTATION, "gene": "MT-ND1", "missense": 1})
+    for index, quality in enumerate([0.2, 0.9]):
+        annotated["neoantigens"].append(
+            {
+                "id": "mt{}".format(index),
+                "mutation_id": UNASSIGNED_MUTATION,
+                "HLA_gene_id": "HLA-B07:02",
+                "sequence": "MPPLLAAA" + str(index),
+                "WT_sequence": "MPPLLAAAA",
+                "mutated_position": 3,
+                "Kd": 40.0,
+                "KdWT": 38.0,
+                "R": 0.0,
+                "logC": 1.0,
+                "logA": -0.2,
+                "quality": quality,
+            }
+        )
+    annotated_path = tmp_path / "s2_annotated.json"
+    tree_path = tmp_path / "s2.json"
+    annotated_path.write_text(json.dumps(annotated))
+    # The tree JSON is unchanged: the MT mutation is in no clone_mutations list.
+    tree_path.write_text(json.dumps(TREE))
+    return load_sample("SAMPLE_1", "PATIENT_1", str(annotated_path), str(tree_path))
+
+
+def test_mutation_columns_include_unassigned_neoantigenic_mutation(tmp_path):
+    """A mutation in no clone still reaches the MAF join, with unknown clonality."""
+    sample = _write_unassigned_sample(tmp_path)
+    out = tmp_path / "study"
+    build_study([sample], "study_1", str(out))
+
+    text = (out / "data_neoag_mutation_columns.txt").read_text().strip().split("\n")
+    header = text[0].split("\t")
+    rows = {line.split("\t")[1]: dict(zip(header, line.split("\t"))) for line in text[1:]}
+
+    assert set(rows) == {"1_100_C_G", UNASSIGNED_MUTATION}
+    unassigned = rows[UNASSIGNED_MUTATION]
+    assert unassigned["neoag.clonal"] == "Indeterminate"
+    assert unassigned["neoag.clone_id_t1"] == "NA"
+    assert unassigned["neoag.ccf"] == "NA"
+    assert unassigned["neoag.n_neoantigens"] == "2"
+    assert unassigned["neoag.best_neoantigen_quality"] == "0.9"
+    # The assigned mutation is unaffected.
+    assert rows["1_100_C_G"]["neoag.clonal"] == "Clonal"
+    assert rows["1_100_C_G"]["neoag.clone_id_t1"] == "1"
+
+
+def test_build_study_rejects_clone_id_above_entity_cap(tmp_path):
+    """A clone id past the reserved entity rows would vanish from the matrix silently."""
+    sample = _write_sample(tmp_path)
+    sample["nodes"][1]["clone_id"] = 64
+
+    with pytest.raises(StudyError) as excinfo:
+        build_study([sample], "study_1", str(tmp_path / "study"))
+    assert "SAMPLE_1" in str(excinfo.value)
+    assert "64" in str(excinfo.value)
