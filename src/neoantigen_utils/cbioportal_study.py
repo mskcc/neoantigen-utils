@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Assemble a loadable cBioPortal study directory from many samples."""
+"""Assemble this tool's portion of a cBioPortal study from many samples.
+
+What is emitted is a study fragment, not a loadable study: it has no
+`meta_study.txt` and no patient-level clinical file, both of which a curator
+supplies. See `build_study`.
+"""
 
 import json
 import os
@@ -240,7 +245,9 @@ def _write_mutation_columns(samples, outdir):
     lines = ["\t".join(header)]
     for sample in samples:
         lines.extend("\t".join(row) for row in _mutation_column_rows(sample))
-    _write(outdir, "data_neoag_mutation_columns.txt", "\n".join(lines) + "\n")
+    # A join input for the MAF, not a portal file: a data_*.txt in the study
+    # directory with no meta_*.txt beside it is what the validator flags.
+    _write(outdir, os.path.join("tidy", "data_neoag_mutation_columns.txt"), "\n".join(lines) + "\n")
 
 
 def _clonality(clone_id, trunk):
@@ -255,24 +262,63 @@ class StudyError(ValueError):
 
 
 def _check_clone_ids(samples):
-    """Clone entity rows stop at MAX_CLONE_ENTITY; a higher id would drop silently.
+    """Clone entity rows cover 0..MAX_CLONE_ENTITY; an id outside it drops silently.
 
     `render_data` emits one row per entity, so a value keyed on an entity that has
-    no row is written nowhere and reported nowhere. Fail loudly instead.
+    no row is written nowhere and reported nowhere. A negative id vanishes the same
+    way an over-cap one does. Fail loudly instead.
     """
     for sample in samples:
         for row in sample["nodes"]:
-            if row["clone_id"] > MAX_CLONE_ENTITY:
+            if not 0 <= row["clone_id"] <= MAX_CLONE_ENTITY:
                 raise StudyError(
-                    "sample {}: clone_id {} exceeds MAX_CLONE_ENTITY {}; raise the cap".format(
+                    "sample {}: clone_id {} outside the clone entity range 0..{}; raise the cap".format(
                         sample["sample_id"], row["clone_id"], MAX_CLONE_ENTITY
                     )
                 )
 
 
+def _check_tree_counts(samples):
+    """Every portal projection stops at N_TREES, but the tidy tables keep them all.
+
+    A sample with more candidate trees would ship portal files and tidy tables that
+    disagree about its tree count, with nothing anywhere saying so.
+    """
+    for sample in samples:
+        n_trees = len({row["tree_idx"] for row in sample["nodes"]})
+        if n_trees > N_TREES:
+            raise StudyError(
+                "sample {}: {} candidate trees exceeds N_TREES {}; raise the cap".format(
+                    sample["sample_id"], n_trees, N_TREES
+                )
+            )
+
+
+def _check_sample_ids(samples):
+    """A repeated sample id emits duplicate matrix columns and clinical rows.
+
+    Portal identifiers come from the manifest rather than the filenames, so a
+    duplicate is an operator typo — and it corrupts the load instead of aborting it.
+    """
+    seen = set()
+    for sample in samples:
+        sample_id = sample["sample_id"]
+        if sample_id in seen:
+            raise StudyError("duplicate sample_id {}; each sample must appear once in the manifest".format(sample_id))
+        seen.add(sample_id)
+
+
 def build_study(samples, study_id, outdir):
-    """Write every cBioPortal file for `samples` into `outdir`."""
+    """Write this tool's portion of a cBioPortal study for `samples` into `outdir`.
+
+    The output is a study FRAGMENT, not a loadable study: generic-assay profiles,
+    clinical sample attributes, a case list and the tidy intermediates. It carries
+    no `meta_study.txt` and no `data_clinical_patient.txt`, so it must be merged
+    into a study directory that already has them.
+    """
+    _check_sample_ids(samples)
     _check_clone_ids(samples)
+    _check_tree_counts(samples)
     os.makedirs(outdir, exist_ok=True)
     sample_ids = [s["sample_id"] for s in samples]
 

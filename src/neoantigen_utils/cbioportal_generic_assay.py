@@ -57,12 +57,22 @@ def render_meta(
     )
 
 
+def _measurement(values, entity_id, sample_id):
+    """A missing pair and a present-but-null value are both NA.
+
+    An absent upstream field arrives here as None; `str(None)` would put the
+    literal "None" in a LIMIT-VALUE column, which is neither a number nor a null.
+    """
+    value = values.get((entity_id, sample_id))
+    return "NA" if value is None else str(value)
+
+
 def render_data(entities, sample_ids, values, meta_properties=("NAME", "DESCRIPTION")):
     """Pivot `values` into an entity x sample matrix. Missing pairs become NA."""
     lines = ["\t".join(["ENTITY_STABLE_ID"] + list(meta_properties) + list(sample_ids))]
     for entity in entities:
         entity_id = entity["ENTITY_STABLE_ID"]
         row = [entity_id] + [str(entity.get(prop, "")) for prop in meta_properties]
-        row += [str(values.get((entity_id, s), "NA")) for s in sample_ids]
+        row += [_measurement(values, entity_id, s) for s in sample_ids]
         lines.append("\t".join(row))
     return "\n".join(lines) + "\n"

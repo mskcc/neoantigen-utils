@@ -99,7 +99,28 @@ def flatten_mutation_clones(tree_data, sample_id):
                     }
                 )
             stack.extend(node.get("children", []))
+    _check_no_duplicate_assignments(rows)
     return rows
+
+
+def _check_no_duplicate_assignments(rows):
+    """A mutation may sit in at most one clone per tree.
+
+    The spec's third flattening invariant. Downstream keys a mutation's clone on
+    (mutation, tree), so a second assignment silently overwrites the first and
+    which one survives depends on DFS child ordering. Not a partition, though:
+    a mutation assigned to no clone at all is legal and routine.
+    """
+    seen = set()
+    for row in rows:
+        key = (row["tree_idx"], row["mutation_id"])
+        if key in seen:
+            raise FlattenError(
+                "sample {}, tree {}: mutation {} is assigned to more than one clone".format(
+                    row["sample_id"], row["tree_idx"], row["mutation_id"]
+                )
+            )
+        seen.add(key)
 
 
 class FlattenError(ValueError):
@@ -114,15 +135,19 @@ def validate_tree_nodes(rows, tolerance=1e-6):
     for row in rows:
         by_tree[(row["sample_id"], row["tree_idx"])].append(row)
 
-    for (_, tree_idx), tree_rows in sorted(by_tree.items()):
+    for (sample_id, tree_idx), tree_rows in sorted(by_tree.items()):
+        # The sample id belongs in the message: "tree 3" alone is unactionable
+        # across a manifest of hundreds of samples.
+        where = "sample {}, tree {}".format(sample_id, tree_idx)
+
         roots = [r for r in tree_rows if r["parent"] == -1]
         if len(roots) != 1:
-            raise FlattenError("tree {}: expected 1 root, found {}".format(tree_idx, len(roots)))
+            raise FlattenError("{}: expected 1 root, found {}".format(where, len(roots)))
 
         clone_ids = [r["clone_id"] for r in tree_rows]
         if len(set(clone_ids)) != len(clone_ids):
-            raise FlattenError("tree {}: duplicate clone ids".format(tree_idx))
+            raise FlattenError("{}: duplicate clone ids".format(where))
 
         total = sum(r["x"] for r in tree_rows)
         if abs(total - 1.0) > tolerance:
-            raise FlattenError("tree {}: exclusive prevalence sums to {}, expected 1.0".format(tree_idx, total))
+            raise FlattenError("{}: exclusive prevalence sums to {}, expected 1.0".format(where, total))

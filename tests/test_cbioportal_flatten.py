@@ -214,6 +214,32 @@ def test_flatten_mutation_clones_numbers_trees_from_one():
     ]
 
 
+def test_flatten_mutation_clones_rejects_a_mutation_in_two_clones_of_one_tree():
+    """Downstream keys the clone on (mutation, tree); a second assignment overwrites."""
+    tree_data = {
+        "sample_trees": [
+            {
+                "score": -1.0,
+                "topology": {
+                    "clone_id": 0,
+                    "clone_mutations": ["1_100_C_G"],
+                    "children": [{"clone_id": 1, "clone_mutations": ["1_100_C_G"]}],
+                },
+            }
+        ]
+    }
+    with pytest.raises(FlattenError, match="1_100_C_G is assigned to more than one clone"):
+        flatten_mutation_clones(tree_data, "SAMPLE_1")
+
+
+def test_flatten_mutation_clones_allows_the_same_mutation_in_two_trees():
+    """The invariant is per tree: candidate trees legitimately disagree about a mutation."""
+    node = {"clone_id": 0, "clone_mutations": [], "children": [{"clone_id": 1, "clone_mutations": ["1_100_C_G"]}]}
+    tree_data = {"sample_trees": [{"score": -1.0, "topology": node}, {"score": -2.0, "topology": node}]}
+    rows = flatten_mutation_clones(tree_data, "SAMPLE_1")
+    assert sorted(r["tree_idx"] for r in rows) == [1, 2]
+
+
 def _rows(*specs, sample_id="SAMPLE_1"):
     return [{"sample_id": sample_id, "tree_idx": 1, "clone_id": c, "parent": p, "x": x} for c, p, x in specs]
 
@@ -235,6 +261,23 @@ def test_validate_rejects_prevalence_not_summing_to_one():
 def test_validate_rejects_duplicate_clone_ids():
     with pytest.raises(FlattenError, match="duplicate clone"):
         validate_tree_nodes(_rows((0, -1, 0.5), (0, 0, 0.5)))
+
+
+# Every validation message must name the sample as well as the tree: across a
+# manifest of hundreds of samples, "tree 3" alone does not say where to look.
+def test_validate_names_the_sample_in_the_two_roots_message():
+    with pytest.raises(FlattenError, match=r"^sample SAMPLE_1, tree 1: expected 1 root, found 2$"):
+        validate_tree_nodes(_rows((0, -1, 0.5), (1, -1, 0.5)))
+
+
+def test_validate_names_the_sample_in_the_duplicate_clone_message():
+    with pytest.raises(FlattenError, match=r"^sample SAMPLE_1, tree 1: duplicate clone ids$"):
+        validate_tree_nodes(_rows((0, -1, 0.5), (0, 0, 0.5)))
+
+
+def test_validate_names_the_sample_in_the_prevalence_message():
+    with pytest.raises(FlattenError, match=r"^sample SAMPLE_1, tree 1: exclusive prevalence sums to 0\.7"):
+        validate_tree_nodes(_rows((0, -1, 0.5), (1, 0, 0.2)))
 
 
 def _tree_rows(tree_idx, *specs, sample_id="SAMPLE_1"):

@@ -1,13 +1,20 @@
+from neoantigen_utils.cbioportal_study_tables import CLINICAL_ATTRIBUTES
 from neoantigen_utils.cbioportal_summarize import summarize_sample, truncal_clone
 
 
-def _node(clone_id, parent, x, load, tmb=0, fi=0.0, fp=0, tree_idx=1):
+def _node(clone_id, parent, x, load, tmb=0, fi=0.0, fp=0, tree_idx=1, X=None):
+    """One tidytree node row. `X` is inclusive prevalence and `x` exclusive.
+
+    They differ on every node with descendants — X is the subtree total — so the
+    fixtures pass them separately. Only SUM(x) is 1, which is what makes the
+    CCF-weighted attributes an expectation over a tumor cell.
+    """
     return {
         "sample_id": "SAMPLE_1",
         "tree_idx": tree_idx,
         "clone_id": clone_id,
         "parent": parent,
-        "X": x,
+        "X": x if X is None else X,
         "x": x,
         "TMB": tmb,
         "neoantigen_load": load,
@@ -17,13 +24,16 @@ def _node(clone_id, parent, x, load, tmb=0, fi=0.0, fp=0, tree_idx=1):
     }
 
 
+# A chain: 0 -> 1 -> 2. Clone 1's inclusive prevalence covers clone 2 as well,
+# so X (1.0) exceeds x (0.4) there, and the root's X is 1.0 against an x of 0.0.
+# Reading X where x is meant changes every weighted sum and the dominant clone.
 TRUNK_TREE = [
-    _node(0, -1, 0.0, 0),
-    _node(1, 0, 0.4, 3, tmb=5, fi=-1.0, fp=1),
-    _node(2, 1, 0.6, 7, tmb=9, fi=-2.0, fp=0),
+    _node(0, -1, 0.0, 0, X=1.0),
+    _node(1, 0, 0.4, 3, tmb=5, fi=-1.0, fp=1, X=1.0),
+    _node(2, 1, 0.6, 7, tmb=9, fi=-2.0, fp=0, X=0.6),
 ]
 BRANCHED_TREE = [
-    _node(0, -1, 0.0, 0),
+    _node(0, -1, 0.0, 0, X=1.0),
     _node(1, 0, 0.5, 3),
     _node(2, 0, 0.5, 4),
 ]
@@ -42,11 +52,25 @@ def test_truncal_clone_is_none_when_root_branches():
 
 
 def test_summary_weights_by_exclusive_prevalence():
+    """Weighting by X instead of x would inflate all three sums on any branching tree.
+
+    Every weight below is the exclusive-prevalence answer, and the inclusive one
+    is given beside it: these assertions fail if X is read where x is meant.
+    """
     summary = summarize_sample(TRUNK_TREE, SCORES, NEOANTIGENS, ASSIGNED, "SAMPLE_1", "PATIENT_1", 168.6)
-    # 0.4*3 + 0.6*7 = 5.4
+    # 0.4*3 + 0.6*7 = 5.4, against 1.0*0 + 1.0*3 + 0.6*7 = 7.2 under X.
     assert summary["CCF_WEIGHTED_NEOANTIGEN_LOAD"] == 5.4
-    # 0.4*-1.0 + 0.6*-2.0 = -1.6
+    # 0.4*5 + 0.6*9 = 7.4, against 1.0*0 + 1.0*5 + 0.6*9 = 10.4 under X.
+    assert summary["CCF_WEIGHTED_TMB"] == 7.4
+    # 0.4*-1.0 + 0.6*-2.0 = -1.6, against 1.0*0.0 + 1.0*-1.0 + 0.6*-2.0 = -2.2 under X.
     assert summary["CCF_WEIGHTED_FITNESS"] == -1.6
+
+
+def test_dominant_clone_is_the_most_prevalent_by_exclusive_prevalence():
+    """Clone 2 holds the largest x; clone 1 holds the largest X. The dominant clone is clone 2."""
+    summary = summarize_sample(TRUNK_TREE, SCORES, NEOANTIGENS, ASSIGNED, "SAMPLE_1", "PATIENT_1", 168.6)
+    assert summary["DOMINANT_CLONE_NEOANTIGEN_LOAD"] == 7
+    assert summary["DOMINANT_CLONE_FITNESS"] == -2.0
 
 
 def test_summary_reports_dominant_clone_and_counts():
@@ -101,6 +125,17 @@ TWO_TREE_SCORES = [{"sample_id": "SAMPLE_1", "tree_idx": 2, "loglik": -9999.0}] 
 TWO_TREE_ASSIGNED = [r for r in ASSIGNED if r["mutation_id"] != "m9"] + [
     {"sample_id": "SAMPLE_1", "tree_idx": 2, "mutation_id": "m9", "clone_id": 2}
 ]
+
+
+def test_clinical_attributes_match_the_summary_keys_exactly():
+    """The table and the summarizer are coupled by name only, in both directions.
+
+    A key the summarizer computes but the table omits never reaches the portal;
+    a name in the table the summarizer does not produce becomes an all-NA column.
+    Neither shows up in any other assertion.
+    """
+    summary = summarize_sample(TRUNK_TREE, SCORES, NEOANTIGENS, ASSIGNED, "SAMPLE_1", "PATIENT_1", 168.6)
+    assert set(summary) == {a[0] for a in CLINICAL_ATTRIBUTES}
 
 
 def test_summary_ignores_every_tree_but_the_top_scoring_one():
