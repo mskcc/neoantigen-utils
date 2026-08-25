@@ -214,8 +214,8 @@ def test_flatten_mutation_clones_numbers_trees_from_one():
     ]
 
 
-def _rows(*specs):
-    return [{"sample_id": "SAMPLE_1", "tree_idx": 1, "clone_id": c, "parent": p, "x": x} for c, p, x in specs]
+def _rows(*specs, sample_id="SAMPLE_1"):
+    return [{"sample_id": sample_id, "tree_idx": 1, "clone_id": c, "parent": p, "x": x} for c, p, x in specs]
 
 
 def test_validate_accepts_a_well_formed_tree():
@@ -237,8 +237,8 @@ def test_validate_rejects_duplicate_clone_ids():
         validate_tree_nodes(_rows((0, -1, 0.5), (0, 0, 0.5)))
 
 
-def _tree_rows(tree_idx, *specs):
-    return [dict(row, tree_idx=tree_idx) for row in _rows(*specs)]
+def _tree_rows(tree_idx, *specs, sample_id="SAMPLE_1"):
+    return [dict(row, tree_idx=tree_idx) for row in _rows(*specs, sample_id=sample_id)]
 
 
 def test_validate_checks_each_tree_separately():
@@ -252,3 +252,12 @@ def test_validate_names_the_offending_tree():
     rows = _tree_rows(1, (0, -1, 0.5), (1, 0, 0.5)) + _tree_rows(2, (0, -1, 0.5), (1, -1, 0.5))
     with pytest.raises(FlattenError, match="tree 2"):
         validate_tree_nodes(rows)
+
+
+def test_validate_keeps_samples_apart():
+    # Tree numbering restarts per sample, so two samples both carry a tree 1.
+    # Pooling them would show two roots, sum(x) == 2.0 and duplicate clone ids.
+    rows = _tree_rows(1, (0, -1, 0.5), (1, 0, 0.5), sample_id="SAMPLE_1") + _tree_rows(
+        1, (0, -1, 0.4), (1, 0, 0.6), sample_id="SAMPLE_2"
+    )
+    validate_tree_nodes(rows)

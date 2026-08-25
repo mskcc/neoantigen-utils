@@ -108,11 +108,13 @@ class FlattenError(ValueError):
 
 def validate_tree_nodes(rows, tolerance=1e-6):
     """Check the invariants the export relies on. Raises FlattenError."""
+    # Trees are numbered within a sample, so tree 1 of two samples are two
+    # distinct trees and must not be pooled into one group.
     by_tree = defaultdict(list)
     for row in rows:
-        by_tree[row["tree_idx"]].append(row)
+        by_tree[(row["sample_id"], row["tree_idx"])].append(row)
 
-    for tree_idx, tree_rows in sorted(by_tree.items()):
+    for (_, tree_idx), tree_rows in sorted(by_tree.items()):
         roots = [r for r in tree_rows if r["parent"] == -1]
         if len(roots) != 1:
             raise FlattenError("tree {}: expected 1 root, found {}".format(tree_idx, len(roots)))
