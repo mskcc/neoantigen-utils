@@ -115,6 +115,62 @@ NEOANTIGEN_PROFILES = [
     ("neoantigen_loga", "logA", "Neoantigen logA", "Log amplitude.", "DESC"),
 ]
 
+# The tidytree TSVs are the durable artifact: treeio/ggtree read them directly
+# and they land in Databricks as flat tables, with every portal file a projection
+# of them. Each entry is (filename, sample key, columns). Columns absent from a
+# row render empty: `tilde_x` exists only on recurrent samples.
+TIDY_TABLES = [
+    (
+        "tree_nodes.tsv",
+        "nodes",
+        [
+            "sample_id",
+            "tree_idx",
+            "clone_id",
+            "parent",
+            "X",
+            "x",
+            "TMB",
+            "neoantigen_load",
+            "NA_Mut",
+            "F_I",
+            "F_P",
+            "new_x",
+            "tilde_x",
+        ],
+    ),
+    ("tree_scores.tsv", "scores", ["sample_id", "tree_idx", "loglik"]),
+    (
+        "neoantigens.tsv",
+        "neoantigens",
+        [
+            "sample_id",
+            "neoantigen_id",
+            "mutation_id",
+            "gene",
+            "HLA_gene_id",
+            "sequence",
+            "WT_sequence",
+            "mutated_position",
+            "Kd",
+            "KdWT",
+            "R",
+            "logC",
+            "logA",
+            "quality",
+        ],
+    ),
+    ("mutation_clones.tsv", "mutation_clones", ["sample_id", "tree_idx", "mutation_id", "clone_id"]),
+]
+
+# Hidden like the other clone profiles, and sorted DESC: these are log-likelihoods,
+# where the best-scoring tree is the largest value.
+TREE_SCORE_PROFILE = (
+    "clone_tree_score",
+    "Candidate tree log-likelihood",
+    "PhyloWGS log-likelihood per candidate tree, best first.",
+)
+
 CLONE_PROFILES = [
     ("clone_parent", "parent", "Clone parent", "Parent clone id; -1 marks the root."),
     ("clone_prevalence", "X", "Clone prevalence", "Inclusive clonal prevalence."),

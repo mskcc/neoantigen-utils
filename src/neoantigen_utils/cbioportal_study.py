@@ -23,6 +23,8 @@ from neoantigen_utils.cbioportal_study_tables import (
     MAX_CLONE_ENTITY,
     NEOANTIGEN_PROFILES,
     N_TREES,
+    TIDY_TABLES,
+    TREE_SCORE_PROFILE,
 )
 from neoantigen_utils.cbioportal_summarize import summarize_sample, truncal_clone
 
@@ -158,6 +160,37 @@ def _write_clone_profiles(samples, sample_ids, study_id, outdir):
             _write(outdir, data_filename, render_data(entities, sample_ids, values))
 
 
+def write_tidy_tables(samples, outdir):
+    """Write the tidytree-shaped tables the portal files are a projection of."""
+    for filename, key, columns in TIDY_TABLES:
+        lines = ["\t".join(columns)]
+        for sample in samples:
+            for row in sample[key]:
+                # An absent field is None on the flattened row; write it as an empty
+                # cell so the table reads back as null, not the string "None".
+                cells = [row.get(c) for c in columns]
+                lines.append("\t".join("" if v is None else str(v) for v in cells))
+        _write(outdir, os.path.join("tidy", filename), "\n".join(lines) + "\n")
+
+
+def _write_tree_score_profile(samples, sample_ids, study_id, outdir):
+    """Hidden profile holding each candidate tree's log-likelihood, keyed on tree_idx."""
+    entities = [
+        {"ENTITY_STABLE_ID": "tree_{}".format(i), "NAME": "tree_{}".format(i), "DESCRIPTION": ""}
+        for i in range(1, N_TREES + 1)
+    ]
+    values = {}
+    for sample in samples:
+        for row in sample["scores"]:
+            values[("tree_{}".format(row["tree_idx"]), sample["sample_id"])] = row["loglik"]
+
+    stable_id, name, description = TREE_SCORE_PROFILE
+    data_filename = "data_{}.txt".format(stable_id)
+    meta = render_meta(study_id, stable_id, "CLONE_TREE", name, description, data_filename, False, "DESC")
+    _write(outdir, "meta_{}.txt".format(stable_id), meta)
+    _write(outdir, data_filename, render_data(entities, sample_ids, values))
+
+
 def _write_case_list(sample_ids, study_id, outdir):
     text = (
         "cancer_study_identifier: {study}\n"
@@ -257,5 +290,7 @@ def build_study(samples, study_id, outdir):
 
     _write_neoantigen_profiles(samples, sample_ids, study_id, outdir)
     _write_clone_profiles(samples, sample_ids, study_id, outdir)
+    _write_tree_score_profile(samples, sample_ids, study_id, outdir)
+    write_tidy_tables(samples, outdir)
     _write_case_list(sample_ids, study_id, outdir)
     _write_mutation_columns(samples, outdir)

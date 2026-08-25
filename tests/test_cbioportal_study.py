@@ -207,6 +207,57 @@ def test_mutation_columns_include_unassigned_neoantigenic_mutation(tmp_path):
     assert rows["1_100_C_G"]["neoag.clone_id_t1"] == "1"
 
 
+def test_build_study_writes_tidytree_tables(tmp_path):
+    sample = _write_sample(tmp_path)
+    out = tmp_path / "study"
+    build_study([sample], "study_1", str(out))
+
+    nodes = (out / "tidy" / "tree_nodes.tsv").read_text().strip().split("\n")
+    assert nodes[0].split("\t") == [
+        "sample_id",
+        "tree_idx",
+        "clone_id",
+        "parent",
+        "X",
+        "x",
+        "TMB",
+        "neoantigen_load",
+        "NA_Mut",
+        "F_I",
+        "F_P",
+        "new_x",
+        "tilde_x",
+    ]
+    assert nodes[1].split("\t")[:4] == ["SAMPLE_1", "1", "0", "-1"]
+    # tilde_x is absent on a primary sample: an empty cell, not the string "None".
+    assert nodes[1].split("\t")[-2:] == ["", ""]
+
+    scores = (out / "tidy" / "tree_scores.tsv").read_text().strip().split("\n")
+    assert scores[0].split("\t") == ["sample_id", "tree_idx", "loglik"]
+    assert scores[1].split("\t")[2] == "-12.5"
+
+    neoantigens = (out / "tidy" / "neoantigens.tsv").read_text()
+    assert "ALLAAVLAA" in neoantigens
+
+    clones = (out / "tidy" / "mutation_clones.tsv").read_text().strip().split("\n")
+    assert clones[0].split("\t") == ["sample_id", "tree_idx", "mutation_id", "clone_id"]
+
+
+def test_build_study_writes_tree_score_profile(tmp_path):
+    sample = _write_sample(tmp_path)
+    out = tmp_path / "study"
+    build_study([sample], "study_1", str(out))
+
+    meta = (out / "meta_clone_tree_score.txt").read_text()
+    assert "value_sort_order: DESC" in meta
+    assert "show_profile_in_analysis_tab: false" in meta
+
+    data = (out / "data_clone_tree_score.txt").read_text().strip().split("\n")
+    rows = {line.split("\t")[0]: line.split("\t")[-1] for line in data[1:]}
+    assert rows["tree_1"] == "-12.5"
+    assert rows["tree_2"] == "NA"
+
+
 def test_build_study_rejects_clone_id_above_entity_cap(tmp_path):
     """A clone id past the reserved entity rows would vanish from the matrix silently."""
     sample = _write_sample(tmp_path)
