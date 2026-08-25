@@ -85,3 +85,45 @@ def test_summary_marks_truncal_na_without_a_trunk():
     assert summary["HAS_TRUNCAL_CLONE"] == "FALSE"
     assert summary["TRUNCAL_NEOANTIGEN_LOAD"] == "NA"
     assert summary["SUBCLONAL_NEOANTIGEN_LOAD"] == "NA"
+
+
+# A second candidate tree for the same sample: a different topology, sharply
+# different prevalences and loads, its own score, and a mutation-to-clone
+# assignment that disagrees with tree 1 about m9.
+TWO_TREE_NODES = TRUNK_TREE + [
+    _node(0, -1, 0.0, 0, tree_idx=2),
+    _node(1, 0, 0.9, 50, tmb=100, fi=5.0, fp=9, tree_idx=2),
+    _node(2, 0, 0.1, 40, tmb=80, fi=4.0, fp=8, tree_idx=2),
+]
+# Tree 2 comes first so an unfiltered `next()` would pick up the wrong score.
+TWO_TREE_SCORES = [{"sample_id": "SAMPLE_1", "tree_idx": 2, "loglik": -9999.0}] + SCORES
+# m9 is unassigned in tree 1 but assigned in tree 2.
+TWO_TREE_ASSIGNED = [r for r in ASSIGNED if r["mutation_id"] != "m9"] + [
+    {"sample_id": "SAMPLE_1", "tree_idx": 2, "mutation_id": "m9", "clone_id": 2}
+]
+
+
+def test_summary_ignores_every_tree_but_the_top_scoring_one():
+    summary = summarize_sample(
+        TWO_TREE_NODES, TWO_TREE_SCORES, NEOANTIGENS, TWO_TREE_ASSIGNED, "SAMPLE_1", "PATIENT_1", 168.6
+    )
+    assert summary == {
+        "PATIENT_ID": "PATIENT_1",
+        "SAMPLE_ID": "SAMPLE_1",
+        "CCF_WEIGHTED_NEOANTIGEN_LOAD": 5.4,
+        "CCF_WEIGHTED_TMB": 7.4,
+        "CCF_WEIGHTED_FITNESS": -1.6,
+        "DOMINANT_CLONE_FITNESS": -2.0,
+        "DOMINANT_CLONE_NEOANTIGEN_LOAD": 7,
+        "N_CLONES": 2,
+        "HAS_TRUNCAL_CLONE": "TRUE",
+        "TRUNCAL_NEOANTIGEN_LOAD": 3,
+        "TOTAL_NEOANTIGEN_LOAD": 10,
+        # m9 is assigned in tree 2 only, so it is still unknown-clonality here.
+        "UNASSIGNED_NEOANTIGEN_LOAD": 1,
+        "SUBCLONAL_NEOANTIGEN_LOAD": 6,
+        "MAX_CLONE_FITNESS": -1.0,
+        "MAX_CLONE_F_P": 1,
+        "TREE_LOGLIK": -2420.51,
+        "EFFECTIVE_N": 168.6,
+    }
