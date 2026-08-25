@@ -62,6 +62,35 @@ def test_render_meta_can_hide_a_profile():
     assert "show_profile_in_analysis_tab: false" in text
 
 
+def test_render_meta_defaults_to_descending_sort_order():
+    text = render_meta(
+        study_id="study_1",
+        stable_id="neoantigen_quality",
+        assay_type="NEOANTIGEN",
+        profile_name="Neoantigen quality",
+        profile_description="Quality from NeoantigenEditing.",
+        data_filename="data_neoantigen_quality.txt",
+        show_in_analysis=True,
+    )
+    assert "value_sort_order: DESC" in text
+
+
+def test_render_meta_honors_an_ascending_sort_order():
+    text = render_meta(
+        study_id="study_1",
+        stable_id="neoantigen_kd",
+        assay_type="NEOANTIGEN",
+        profile_name="Neoantigen binding affinity",
+        profile_description="Kd in nM; a lower value is the stronger binder.",
+        data_filename="data_neoantigen_kd.txt",
+        show_in_analysis=True,
+        value_sort_order="ASC",
+    )
+    assert "value_sort_order: ASC" in text
+    # Bare "DESC" would also match DESCRIPTION, so pin the whole field line.
+    assert "value_sort_order: DESC" not in text
+
+
 def test_render_data_pivots_entities_by_sample():
     entities = [
         {"ENTITY_STABLE_ID": "E1", "NAME": "peptide1", "DESCRIPTION": "d1"},
