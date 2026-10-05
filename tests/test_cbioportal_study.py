@@ -34,6 +34,7 @@ ANNOTATED = {
     "Effective_N": 168.6,
     "sample_trees": [{"score": -12.5, "topology": ROOT}],
     "mutations": [{"id": "1_100_C_G", "gene": "TP53", "missense": 1}],
+    "HLA_genes": ["A*02:01", "A*03:01"],
     "neoantigens": [
         {
             "id": "n1",
@@ -415,3 +416,16 @@ def test_generic_assay_renders_an_absent_upstream_field_as_na(tmp_path):
     row = next(line for line in data[1:] if line.startswith("TP53_"))
     assert row.split("\t")[-1] == "NA"
     assert "None" not in row
+
+
+def test_load_sample_carries_mutations_and_hla(tmp_path):
+    sample = _write_sample(tmp_path)
+    assert [m["mutation_id"] for m in sample["mutations"]] == ["1_100_C_G"]
+    assert sample["hla"] == ["A*02:01", "A*03:01"]
+
+
+def test_build_study_writes_mutations_tidy_table(tmp_path):
+    sample = _write_sample(tmp_path)
+    build_study([sample], "study_1", str(tmp_path / "out"))
+    text = (tmp_path / "out" / "tidy" / "mutations.tsv").read_text()
+    assert text.splitlines() == ["sample_id\tmutation_id\tgene\tmissense", "SAMPLE_1\t1_100_C_G\tTP53\t1"]

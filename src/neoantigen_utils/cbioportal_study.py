@@ -11,9 +11,11 @@ import os
 
 from neoantigen_utils.cbioportal_flatten import (
     flatten_mutation_clones,
+    flatten_mutations,
     flatten_neoantigens,
     flatten_tree_nodes,
     flatten_tree_scores,
+    hla_alleles,
     select_top_trees,
     validate_tree_nodes,
 )
@@ -55,6 +57,8 @@ def load_sample(sample_id, patient_id, annotated_path, tree_path):
         "scores": scores,
         "neoantigens": neoantigens,
         "mutation_clones": mutation_clones,
+        "mutations": flatten_mutations(annotated, sample_id),
+        "hla": hla_alleles(annotated),
         "summary": summarize_sample(
             nodes,
             scores,

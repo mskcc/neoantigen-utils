@@ -6,12 +6,36 @@ children. `parent = -1` marks the root, which is the germline node and holds no
 mutations of its own.
 """
 
+import re
 from collections import defaultdict
 
 # new_x is present on every node; tilde_x only on recurrent samples. Both are
 # carried through untouched — the tidy table is the durable artifact and must
 # not silently drop upstream fields.
 NODE_FIELDS = ("TMB", "neoantigen_load", "NA_Mut", "F_I", "F_P", "new_x", "tilde_x")
+
+_HLA_RE = re.compile(r"^(?:HLA-)?([A-Z]+[0-9]*)\*?(\d{2,3}):(\d{2,3})")
+
+
+def flatten_mutations(data, sample_id):
+    """Return one row per entry of the pipeline's `mutations[]` list."""
+    if "mutations" not in data:
+        raise FlattenError("sample {}: JSON has no mutations list".format(sample_id))
+    return [
+        {"sample_id": sample_id, "mutation_id": m["id"], "gene": m.get("gene", ""), "missense": m.get("missense")}
+        for m in data["mutations"]
+    ]
+
+
+def hla_alleles(data):
+    """Return the alleles used for prediction, normalised to two-field `A*02:01`."""
+    alleles = []
+    for raw in data.get("HLA_genes", []):
+        match = _HLA_RE.match(raw)
+        if not match:
+            raise FlattenError("unparseable HLA allele {!r}".format(raw))
+        alleles.append("{}*{}:{}".format(*match.groups()))
+    return alleles
 
 
 def _exclusive_prevalence(topology, sample_id, tree_idx, tolerance=1e-6):

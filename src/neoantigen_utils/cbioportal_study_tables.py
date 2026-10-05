@@ -161,6 +161,7 @@ TIDY_TABLES = [
         ],
     ),
     ("mutation_clones.tsv", "mutation_clones", ["sample_id", "tree_idx", "mutation_id", "clone_id"]),
+    ("mutations.tsv", "mutations", ["sample_id", "mutation_id", "gene", "missense"]),
 ]
 
 # Hidden like the other clone profiles, and sorted DESC: these are log-likelihoods,

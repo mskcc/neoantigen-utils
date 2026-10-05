@@ -3,9 +3,11 @@ import pytest
 from neoantigen_utils.cbioportal_flatten import (
     FlattenError,
     flatten_mutation_clones,
+    flatten_mutations,
     flatten_neoantigens,
     flatten_tree_nodes,
     flatten_tree_scores,
+    hla_alleles,
     select_top_trees,
     validate_tree_nodes,
 )
@@ -355,3 +357,31 @@ def test_select_top_trees_keeps_all_when_fewer_than_n():
 def test_select_top_trees_rejects_misaligned_files():
     with pytest.raises(FlattenError, match="tree order"):
         select_top_trees(_scored(-5, -1), _scored(-1, -5), 1)
+
+
+def test_flatten_mutations_keeps_every_listed_mutation():
+    data = {"mutations": [{"id": "1_100_C_G", "gene": "TP53", "missense": 1},
+                          {"id": "2_200_AT_D", "gene": "KRAS", "missense": 0}]}
+    rows = flatten_mutations(data, "SAMPLE_1")
+    assert rows == [
+        {"sample_id": "SAMPLE_1", "mutation_id": "1_100_C_G", "gene": "TP53", "missense": 1},
+        {"sample_id": "SAMPLE_1", "mutation_id": "2_200_AT_D", "gene": "KRAS", "missense": 0},
+    ]
+
+
+def test_flatten_mutations_rejects_a_missing_mutation_list():
+    with pytest.raises(FlattenError, match="mutations"):
+        flatten_mutations({}, "SAMPLE_1")
+
+
+@pytest.mark.parametrize("raw, expected", [
+    ("A*02:01", "A*02:01"), ("HLA-A*02:01", "A*02:01"), ("HLA-A02:01", "A*02:01"),
+    ("B*07:02:01", "B*07:02"), ("DRB1*15:01", "DRB1*15:01"),
+])
+def test_hla_alleles_normalises_to_two_field_star_form(raw, expected):
+    assert hla_alleles({"HLA_genes": [raw]}) == [expected]
+
+
+def test_hla_alleles_rejects_an_unparseable_allele():
+    with pytest.raises(FlattenError, match="HLA"):
+        hla_alleles({"HLA_genes": ["not-an-allele"]})
