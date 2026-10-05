@@ -23,9 +23,9 @@ generic_entity_meta_properties: {meta_properties}
 """
 
 
-_SNV_RE = re.compile(r"^([0-9A-Za-z]+)_(\d+)_([ACGTN]+)_([ACGTN]+)$")
-_DEL_RE = re.compile(r"^([0-9A-Za-z]+)_(\d+)_([ACGTN]+)_D$")
-_INS_RE = re.compile(r"^([0-9A-Za-z]+)_(\d+)_I_([ACGTN]+)$")
+_SNV_RE = re.compile(r"^([0-9A-Za-z.]+)_(\d+)_([ACGTN]+)_([ACGTN]+)$")
+_DEL_RE = re.compile(r"^([0-9A-Za-z.]+)_(\d+)_([ACGTN]+)_D$")
+_INS_RE = re.compile(r"^([0-9A-Za-z.]+)_(\d+)_I_([ACGTN]+)$")
 _MNV_TYPES = {1: "SNP", 2: "DNP", 3: "TNP"}
 
 

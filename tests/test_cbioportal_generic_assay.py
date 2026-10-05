@@ -112,6 +112,9 @@ def test_render_data_pivots_entities_by_sample():
     ("1_100_CA_GT", {"CHR": "1", "START": "100", "REF": "CA", "ALT": "GT", "VARIANT_TYPE": "DNP"}),
     ("2_200_AT_D", {"CHR": "2", "START": "200", "REF": "AT", "ALT": "-", "VARIANT_TYPE": "DEL"}),
     ("3_300_I_GG", {"CHR": "3", "START": "300", "REF": "-", "ALT": "GG", "VARIANT_TYPE": "INS"}),
+    ("GL000220.1_100_C_G", {"CHR": "GL000220.1", "START": "100", "REF": "C", "ALT": "G", "VARIANT_TYPE": "SNP"}),
+    ("KI270706.1_5_AT_D", {"CHR": "KI270706.1", "START": "5", "REF": "AT", "ALT": "-", "VARIANT_TYPE": "DEL"}),
+    ("1_100_N_G", {"CHR": "1", "START": "100", "REF": "N", "ALT": "G", "VARIANT_TYPE": "SNP"}),
     ("MT_5_A_T", {"CHR": "MT", "START": "5", "REF": "A", "ALT": "T", "VARIANT_TYPE": "SNP"}),
 ])
 def test_parse_mutation_id_gives_cbioportal_coordinates(mutation_id, expected):
