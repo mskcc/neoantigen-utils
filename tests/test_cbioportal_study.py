@@ -429,3 +429,16 @@ def test_build_study_writes_mutations_tidy_table(tmp_path):
     build_study([sample], "study_1", str(tmp_path / "out"))
     text = (tmp_path / "out" / "tidy" / "mutations.tsv").read_text()
     assert text.splitlines() == ["sample_id\tmutation_id\tgene\tmissense", "SAMPLE_1\t1_100_C_G\tTP53\t1"]
+
+
+def test_neoantigen_profiles_carry_structured_properties(tmp_path):
+    sample = _write_sample(tmp_path)
+    out = tmp_path / "out"
+    build_study([sample], "study_1", str(out))
+    meta = (out / "meta_neoantigen_quality.txt").read_text()
+    assert "generic_entity_meta_properties: NAME,DESCRIPTION,GENE,MUTATION_ID,SEQUENCE,WT_SEQUENCE,HLA,MUTATED_POSITION" in meta
+    header, row = (out / "data_neoantigen_quality.txt").read_text().splitlines()[:2]
+    cells = dict(zip(header.split("\t"), row.split("\t")))
+    assert cells["GENE"] == "TP53" and cells["MUTATION_ID"] == "1_100_C_G"
+    assert cells["SEQUENCE"] == "ALLAAVLAA" and cells["WT_SEQUENCE"] == "ALLAALLAA"
+    assert cells["HLA"] == "A*02:01" and cells["MUTATED_POSITION"] == "6"

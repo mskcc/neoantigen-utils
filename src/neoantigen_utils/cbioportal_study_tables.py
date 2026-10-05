@@ -91,6 +91,11 @@ CLINICAL_ATTRIBUTES = [
     ("EFFECTIVE_N", "Effective N", "Effective population size from the pipeline", "NUMBER", "1"),
 ]
 
+# Entity meta properties: one row per neoantigen, ordered for cBioPortal portal file.
+NEOANTIGEN_META_PROPERTIES = (
+    "NAME", "DESCRIPTION", "GENE", "MUTATION_ID", "SEQUENCE", "WT_SEQUENCE", "HLA", "MUTATED_POSITION",
+)
+
 # Trailing field is value_sort_order. Kd and KdWT are affinities in nM where
 # LOWER is the stronger binder, so they sort ASC; DESC there would rank the
 # weakest binders as most important in the waterfall plot and OncoPrint tooltip.

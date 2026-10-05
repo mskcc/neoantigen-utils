@@ -29,6 +29,7 @@ from neoantigen_utils.cbioportal_study_tables import (
     CLINICAL_ATTRIBUTES,
     CLONE_PROFILES,
     MAX_CLONE_ENTITY,
+    NEOANTIGEN_META_PROPERTIES,
     NEOANTIGEN_PROFILES,
     N_TREES,
     TIDY_TABLES,
@@ -109,6 +110,12 @@ def _neoantigen_entities(samples):
                         row["WT_sequence"],
                         row["mutated_position"],
                     ),
+                    "GENE": row["gene"],
+                    "MUTATION_ID": row["mutation_id"],
+                    "SEQUENCE": row["sequence"],
+                    "WT_SEQUENCE": row["WT_sequence"],
+                    "HLA": hla_alleles({"HLA_genes": [row["HLA_gene_id"]]})[0],
+                    "MUTATED_POSITION": str(row["mutated_position"]),
                 },
             )
     return [entities[k] for k in sorted(entities)]
@@ -134,9 +141,10 @@ def _write_neoantigen_profiles(samples, sample_ids, study_id, outdir):
                 data_filename,
                 True,
                 value_sort_order=sort_order,
+                meta_properties=NEOANTIGEN_META_PROPERTIES,
             ),
         )
-        _write(outdir, data_filename, render_data(entities, sample_ids, values))
+        _write(outdir, data_filename, render_data(entities, sample_ids, values, NEOANTIGEN_META_PROPERTIES))
 
 
 def _write_clone_profiles(samples, sample_ids, study_id, outdir):
