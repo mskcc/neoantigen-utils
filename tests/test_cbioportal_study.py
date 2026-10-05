@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from neoantigen_utils.cbioportal_study import StudyError, build_study, load_sample
+from neoantigen_utils.cbioportal_study import StudyError, build_study, hla_attributes, load_sample
 
 ROOT = {
     "clone_id": 0,
@@ -494,3 +494,32 @@ def test_mutation_profiles_cover_listed_and_assigned_mutations(tmp_path):
     assert _cells(out, "data_mutation_clone_t1.txt", "9_9_A_T")["SAMPLE_1"] == "1"
     meta = (out / "meta_mutation_detected.txt").read_text()
     assert "generic_assay_type: MUTATION" in meta and "show_profile_in_analysis_tab: false" in meta
+
+
+def test_hla_attributes_fill_two_slots_per_gene():
+    attrs = hla_attributes(["A*03:01", "A*02:01", "B*18:01", "C*07:18", "C*05:01"])
+    assert attrs == {
+        "HLA_A_1": "A*03:01",
+        "HLA_A_2": "A*02:01",
+        "HLA_B_1": "B*18:01",
+        "HLA_C_1": "C*07:18",
+        "HLA_C_2": "C*05:01",
+    }
+
+
+def test_hla_attributes_reject_a_third_allele_for_one_gene():
+    with pytest.raises(StudyError, match="HLA-A"):
+        hla_attributes(["A*01:01", "A*02:01", "A*03:01"])
+
+
+def test_hla_attributes_ignore_class_ii():
+    assert hla_attributes(["A*02:01", "DRB1*15:01"]) == {"HLA_A_1": "A*02:01"}
+
+
+def test_clinical_file_carries_hla_columns(tmp_path):
+    sample = _write_sample(tmp_path)
+    out = tmp_path / "out"
+    build_study([sample], "study_1", str(out))
+    lines = (out / "data_clinical_sample.txt").read_text().splitlines()
+    row = dict(zip(lines[4].split("\t"), lines[5].split("\t")))
+    assert row["HLA_A_1"] == "A*02:01" and row["HLA_A_2"] == "A*03:01" and row["HLA_B_1"] == "NA"

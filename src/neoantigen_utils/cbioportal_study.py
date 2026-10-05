@@ -26,14 +26,17 @@ from neoantigen_utils.cbioportal_generic_assay import (
     render_meta,
 )
 from neoantigen_utils.cbioportal_study_profiles import (
+    StudyError,
     _neoantigen_entities,
     _write,
     _write_mutation_profiles,
     _write_neoantigen_clone_profiles,
+    hla_attributes,
 )
 from neoantigen_utils.cbioportal_study_tables import (
     CLINICAL_ATTRIBUTES,
     CLONE_PROFILES,
+    HLA_CLINICAL_ATTRIBUTES,
     MAX_CLONE_ENTITY,
     NEOANTIGEN_META_PROPERTIES,
     NEOANTIGEN_PROFILES,
@@ -79,16 +82,18 @@ def load_sample(sample_id, patient_id, annotated_path, tree_path):
 
 
 def _render_clinical(samples):
-    names = [a[0] for a in CLINICAL_ATTRIBUTES]
+    attributes = CLINICAL_ATTRIBUTES + HLA_CLINICAL_ATTRIBUTES
+    names = [a[0] for a in attributes]
     lines = [
-        "#" + "\t".join(a[1] for a in CLINICAL_ATTRIBUTES),
-        "#" + "\t".join(a[2] for a in CLINICAL_ATTRIBUTES),
-        "#" + "\t".join(a[3] for a in CLINICAL_ATTRIBUTES),
-        "#" + "\t".join(a[4] for a in CLINICAL_ATTRIBUTES),
+        "#" + "\t".join(a[1] for a in attributes),
+        "#" + "\t".join(a[2] for a in attributes),
+        "#" + "\t".join(a[3] for a in attributes),
+        "#" + "\t".join(a[4] for a in attributes),
         "\t".join(names),
     ]
     for sample in samples:
-        lines.append("\t".join(str(sample["summary"].get(n, "NA")) for n in names))
+        values = dict(sample["summary"], **hla_attributes(sample["hla"]))
+        lines.append("\t".join(str(values.get(n, "NA")) for n in names))
     return "\n".join(lines) + "\n"
 
 
@@ -240,10 +245,6 @@ def _clonality(clone_id, trunk):
     if trunk is None or clone_id is None:
         return "Indeterminate"
     return "Clonal" if clone_id == trunk["clone_id"] else "Subclonal"
-
-
-class StudyError(ValueError):
-    """Raised when a study cannot be emitted without losing data."""
 
 
 def _check_clone_ids(samples):

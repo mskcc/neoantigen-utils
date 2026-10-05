@@ -8,6 +8,18 @@ data, not logic, and changing a description here changes only the emitted files.
 MAX_CLONE_ENTITY = 63
 N_TREES = 5
 
+HLA_CLINICAL_ATTRIBUTES = [
+    (
+        "HLA_{}_{}".format(gene, slot),
+        "HLA-{} allele {}".format(gene, slot),
+        "HLA-{} allele used for neoantigen prediction".format(gene),
+        "STRING",
+        "1",
+    )
+    for gene in ("A", "B", "C")
+    for slot in (1, 2)
+]
+
 CLINICAL_ATTRIBUTES = [
     ("PATIENT_ID", "Patient Identifier", "Patient identifier", "STRING", "1"),
     ("SAMPLE_ID", "Sample Identifier", "Sample identifier", "STRING", "1"),

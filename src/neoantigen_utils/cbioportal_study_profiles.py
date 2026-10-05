@@ -19,6 +19,24 @@ from neoantigen_utils.cbioportal_study_tables import (
 )
 
 
+class StudyError(ValueError):
+    """Raised when a study cannot be emitted without losing data."""
+
+
+def hla_attributes(alleles):
+    """Class I alleles -> HLA_<gene>_<slot> clinical attributes, slots in input order."""
+    attrs = {}
+    for allele in alleles:
+        gene = allele.split("*")[0]
+        if gene not in ("A", "B", "C"):
+            continue
+        if "HLA_{}_2".format(gene) in attrs:
+            raise StudyError("more than two HLA-{} alleles".format(gene))
+        slot = 2 if "HLA_{}_1".format(gene) in attrs else 1
+        attrs["HLA_{}_{}".format(gene, slot)] = allele
+    return attrs
+
+
 def _write(outdir, filename, text):
     path = os.path.join(outdir, filename)
     os.makedirs(os.path.dirname(path), exist_ok=True)
