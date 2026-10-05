@@ -14,28 +14,76 @@ from collections import defaultdict
 NODE_FIELDS = ("TMB", "neoantigen_load", "NA_Mut", "F_I", "F_P", "new_x", "tilde_x")
 
 
-def _walk(node, parent, tree_idx, sample_id, rows):
+def _exclusive_prevalence(topology, sample_id, tree_idx, tolerance=1e-6):
+    """Return {clone_id: x}, each clone's share of tumor cells it alone accounts for.
+
+    Derived from the cumulative prevalence X rather than read from the upstream `x`,
+    which is not reliably exclusive: x = (X - sum of children's X) / tumor X, where
+    tumor X is the summed X of the root's children. The germline root gets 0, so
+    x sums to 1 over the tumor clones.
+    """
+    where = "sample {}, tree {}".format(sample_id, tree_idx)
+    tumor_total = sum(child["X"] for child in topology.get("children", []))
+    if tumor_total <= 0:
+        raise FlattenError("{}: root has no tumor clones with X > 0".format(where))
+
+    shares = {}
+    stack = [(topology, True)]
+    while stack:
+        node, is_root = stack.pop()
+        children = node.get("children", [])
+        own = node["X"] - sum(child["X"] for child in children)
+        if own < -tolerance:
+            raise FlattenError(
+                "{}: clone {} children's X exceeds its own X {}".format(where, node["clone_id"], node["X"])
+            )
+        shares[node["clone_id"]] = 0.0 if is_root else max(own, 0.0) / tumor_total
+        stack.extend((child, False) for child in children)
+    return shares
+
+
+def _walk(node, parent, tree_idx, sample_id, rows, shares):
     row = {
         "sample_id": sample_id,
         "tree_idx": tree_idx,
         "clone_id": node["clone_id"],
         "parent": parent,
         "X": node.get("X"),
-        "x": node.get("x"),
+        "x": shares[node["clone_id"]],
     }
     for field in NODE_FIELDS:
         row[field] = node.get(field)
     rows.append(row)
     for child in node.get("children", []):
-        _walk(child, node["clone_id"], tree_idx, sample_id, rows)
+        _walk(child, node["clone_id"], tree_idx, sample_id, rows, shares)
 
 
 def flatten_tree_nodes(data, sample_id):
     """Return one row per (tree, clone) for every candidate tree in `data`."""
     rows = []
     for tree_idx, tree in enumerate(data["sample_trees"], start=1):
-        _walk(tree["topology"], -1, tree_idx, sample_id, rows)
+        shares = _exclusive_prevalence(tree["topology"], sample_id, tree_idx)
+        _walk(tree["topology"], -1, tree_idx, sample_id, rows, shares)
     return rows
+
+
+def select_top_trees(annotated, tree_data, n):
+    """Keep the `n` highest-scoring trees of both JSONs, best first.
+
+    The two files list the same candidate trees in the same order, which is not
+    score order; the pre-annotation file is reordered by the annotated file's
+    ranking, and a score mismatch at any kept position means they are not aligned.
+    """
+    trees = annotated["sample_trees"]
+    order = sorted(range(len(trees)), key=lambda i: trees[i]["score"], reverse=True)[:n]
+    other = tree_data["sample_trees"]
+    for i in order:
+        if i >= len(other) or other[i].get("score") != trees[i]["score"]:
+            raise FlattenError("annotated and pre-annotation JSONs disagree on tree order at tree {}".format(i + 1))
+    return (
+        dict(annotated, sample_trees=[trees[i] for i in order]),
+        dict(tree_data, sample_trees=[other[i] for i in order]),
+    )
 
 
 NEOANTIGEN_FIELDS = (

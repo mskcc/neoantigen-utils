@@ -14,6 +14,7 @@ from neoantigen_utils.cbioportal_flatten import (
     flatten_neoantigens,
     flatten_tree_nodes,
     flatten_tree_scores,
+    select_top_trees,
     validate_tree_nodes,
 )
 from neoantigen_utils.cbioportal_generic_assay import (
@@ -41,6 +42,7 @@ def load_sample(sample_id, patient_id, annotated_path, tree_path):
     with open(tree_path) as handle:
         tree_data = json.load(handle)
 
+    annotated, tree_data = select_top_trees(annotated, tree_data, N_TREES)
     nodes = flatten_tree_nodes(annotated, sample_id)
     validate_tree_nodes(nodes)
     scores = flatten_tree_scores(annotated, sample_id)
@@ -279,10 +281,10 @@ def _check_clone_ids(samples):
 
 
 def _check_tree_counts(samples):
-    """Every portal projection stops at N_TREES, but the tidy tables keep them all.
+    """Every portal projection stops at N_TREES.
 
-    A sample with more candidate trees would ship portal files and tidy tables that
-    disagree about its tree count, with nothing anywhere saying so.
+    `load_sample` already keeps only the top N_TREES; a sample built any other way
+    with more trees would ship tables whose extra trees no portal file carries.
     """
     for sample in samples:
         n_trees = len({row["tree_idx"] for row in sample["nodes"]})

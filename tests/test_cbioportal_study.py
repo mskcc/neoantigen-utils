@@ -81,6 +81,20 @@ def test_load_sample_returns_all_row_sets(tmp_path):
     assert sample["summary"]["EFFECTIVE_N"] == 168.6
 
 
+def test_load_sample_ranks_trees_by_score_so_tree_1_is_best(tmp_path):
+    worse = copy.deepcopy(ANNOTATED["sample_trees"][0])
+    worse["score"] = -99.0
+    worse["topology"]["children"][0]["TMB"] = 7
+    annotated = dict(ANNOTATED, sample_trees=[worse, ANNOTATED["sample_trees"][0]])
+    tree = {"sample_trees": [dict(TREE["sample_trees"][0], score=-99.0), TREE["sample_trees"][0]]}
+    (tmp_path / "a.json").write_text(json.dumps(annotated))
+    (tmp_path / "t.json").write_text(json.dumps(tree))
+    sample = load_sample("SAMPLE_1", "PATIENT_1", str(tmp_path / "a.json"), str(tmp_path / "t.json"))
+    tree_1 = [r for r in sample["nodes"] if r["tree_idx"] == 1]
+    assert [r["TMB"] for r in tree_1] == [0, 5]
+    assert sample["scores"][0]["loglik"] == -12.5
+
+
 def test_build_study_writes_clinical_file(tmp_path):
     sample = _write_sample(tmp_path)
     out = tmp_path / "study"

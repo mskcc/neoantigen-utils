@@ -6,6 +6,7 @@ from neoantigen_utils.cbioportal_flatten import (
     flatten_neoantigens,
     flatten_tree_nodes,
     flatten_tree_scores,
+    select_top_trees,
     validate_tree_nodes,
 )
 
@@ -304,3 +305,53 @@ def test_validate_keeps_samples_apart():
         1, (0, -1, 0.4), (1, 0, 0.6), sample_id="SAMPLE_2"
     )
     validate_tree_nodes(rows)
+
+
+def _node(clone_id, X, children=()):
+    # Upstream x is cumulative (x == X) in real cohort output; it must be ignored.
+    return {"clone_id": clone_id, "X": X, "x": X, "children": list(children)}
+
+
+def _x_by_clone(topology):
+    return {r["clone_id"]: round(r["x"], 6) for r in flatten_tree_nodes(_tree(topology), "SAMPLE_1")}
+
+
+def test_flatten_tree_nodes_derives_exclusive_prevalence_from_X():
+    topology = _node(0, 1.0, [_node(1, 0.8, [_node(2, 0.5), _node(3, 0.2)])])
+    assert _x_by_clone(topology) == {0: 0.0, 1: 0.125, 2: 0.625, 3: 0.25}
+
+
+def test_flatten_tree_nodes_normalizes_x_over_a_branching_root():
+    topology = _node(0, 1.0, [_node(1, 0.6), _node(2, 0.2)])
+    assert _x_by_clone(topology) == {0: 0.0, 1: 0.75, 2: 0.25}
+
+
+def test_flatten_tree_nodes_rejects_children_exceeding_their_parent():
+    topology = _node(0, 1.0, [_node(1, 0.5, [_node(2, 0.7)])])
+    with pytest.raises(FlattenError, match="clone 1"):
+        flatten_tree_nodes(_tree(topology), "SAMPLE_1")
+
+
+def test_flatten_tree_nodes_rejects_a_root_with_no_tumor_clones():
+    with pytest.raises(FlattenError, match="no tumor clones"):
+        flatten_tree_nodes(_tree(_node(0, 1.0)), "SAMPLE_1")
+
+
+def _scored(*scores):
+    return {"sample_trees": [{"score": s, "topology": {"clone_id": 0, "tag": s}} for s in scores]}
+
+
+def test_select_top_trees_keeps_the_n_best_in_score_order():
+    annotated, tree_data = select_top_trees(_scored(-5, -1, -9, -3), _scored(-5, -1, -9, -3), 2)
+    assert [t["score"] for t in annotated["sample_trees"]] == [-1, -3]
+    assert [t["topology"]["tag"] for t in tree_data["sample_trees"]] == [-1, -3]
+
+
+def test_select_top_trees_keeps_all_when_fewer_than_n():
+    annotated, _ = select_top_trees(_scored(-2, -1), _scored(-2, -1), 5)
+    assert [t["score"] for t in annotated["sample_trees"]] == [-1, -2]
+
+
+def test_select_top_trees_rejects_misaligned_files():
+    with pytest.raises(FlattenError, match="tree order"):
+        select_top_trees(_scored(-5, -1), _scored(-1, -5), 1)
