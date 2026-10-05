@@ -37,6 +37,7 @@ ANNOTATED = {
         }
     ],
     "mutations": [{"id": "1_100_C_G", "gene": "TP53", "missense": 1}],
+    "HLA_genes": ["A*02:01", "A*03:01"],
     "neoantigens": [
         {
             "id": "n1",

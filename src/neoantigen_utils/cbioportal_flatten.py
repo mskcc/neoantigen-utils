@@ -14,24 +14,41 @@ from collections import defaultdict
 # not silently drop upstream fields.
 NODE_FIELDS = ("TMB", "neoantigen_load", "NA_Mut", "F_I", "F_P", "new_x", "tilde_x")
 
-_HLA_RE = re.compile(r"^(?:HLA-)?([A-Z]+[0-9]*)\*?(\d{2,3}):(\d{2,3})")
+_HLA_RE = re.compile(
+    r"^(?:HLA-)?([A-Z]+[0-9]*)\*?(\d{2,3}):(\d{2,3})(?::\d{2,3})*$"
+)
 
 
 def flatten_mutations(data, sample_id):
     """Return one row per entry of the pipeline's `mutations[]` list."""
     if "mutations" not in data:
         raise FlattenError("sample {}: JSON has no mutations list".format(sample_id))
-    return [
-        {"sample_id": sample_id, "mutation_id": m["id"], "gene": m.get("gene", ""), "missense": m.get("missense")}
-        for m in data["mutations"]
-    ]
+    rows = []
+    for m in data["mutations"]:
+        if "id" not in m:
+            raise FlattenError(
+                "sample {}: mutation entry missing id field".format(sample_id)
+            )
+        rows.append(
+            {
+                "sample_id": sample_id,
+                "mutation_id": m["id"],
+                "gene": m.get("gene", ""),
+                "missense": m.get("missense"),
+            }
+        )
+    return rows
 
 
 def hla_alleles(data):
     """Return the alleles used for prediction, normalised to two-field `A*02:01`."""
+    if "HLA_genes" not in data or not data["HLA_genes"]:
+        raise FlattenError("HLA_genes list missing or empty")
     alleles = []
-    for raw in data.get("HLA_genes", []):
-        match = _HLA_RE.match(raw)
+    for raw in data["HLA_genes"]:
+        if not isinstance(raw, str):
+            raise FlattenError("unparseable HLA allele {!r}".format(raw))
+        match = _HLA_RE.fullmatch(raw)
         if not match:
             raise FlattenError("unparseable HLA allele {!r}".format(raw))
         alleles.append("{}*{}:{}".format(*match.groups()))

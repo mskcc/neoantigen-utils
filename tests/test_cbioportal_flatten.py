@@ -385,3 +385,38 @@ def test_hla_alleles_normalises_to_two_field_star_form(raw, expected):
 def test_hla_alleles_rejects_an_unparseable_allele():
     with pytest.raises(FlattenError, match="HLA"):
         hla_alleles({"HLA_genes": ["not-an-allele"]})
+
+
+def test_hla_alleles_rejects_missing_hla_genes_key():
+    with pytest.raises(FlattenError, match="HLA"):
+        hla_alleles({})
+
+
+def test_hla_alleles_rejects_empty_hla_genes_list():
+    with pytest.raises(FlattenError, match="HLA"):
+        hla_alleles({"HLA_genes": []})
+
+
+def test_hla_alleles_accepts_three_field_format_and_truncates():
+    assert hla_alleles({"HLA_genes": ["A*02:01:01:01"]}) == ["A*02:01"]
+
+
+def test_hla_alleles_rejects_allele_with_trailing_junk():
+    with pytest.raises(FlattenError, match="HLA"):
+        hla_alleles({"HLA_genes": ["A*02:01 junk"]})
+
+
+def test_hla_alleles_rejects_null_allele_suffix():
+    with pytest.raises(FlattenError, match="HLA"):
+        hla_alleles({"HLA_genes": ["A*02:01N"]})
+
+
+def test_hla_alleles_rejects_non_string_allele():
+    with pytest.raises(FlattenError, match="HLA"):
+        hla_alleles({"HLA_genes": [None]})
+
+
+def test_flatten_mutations_rejects_mutation_lacking_id():
+    data = {"mutations": [{"gene": "TP53", "missense": 1}]}
+    with pytest.raises(FlattenError, match="sample SAMPLE_1"):
+        flatten_mutations(data, "SAMPLE_1")
