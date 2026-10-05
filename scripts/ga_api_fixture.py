@@ -42,6 +42,9 @@ def profile_rows(meta, frag, ids):
     props = [p for p in meta["generic_entity_meta_properties"].split(",") if p]
     header, *body = read_table(frag / meta["data_filename"])
     col = {name: i for i, name in enumerate(header)}
+    for needed in [ids["sampleId"], *props]:
+        if needed not in col:
+            raise ValueError(f"{meta['data_filename']}: column {needed!r} missing from header")
     sample_col = col[ids["sampleId"]]
     data, metas = [], []
     for row in body:
@@ -61,11 +64,14 @@ def profile_rows(meta, frag, ids):
 def clinical_rows(frag, ids):
     rows = [r for r in read_table(frag / "data_clinical_sample.txt") if not r[0].startswith("#")]
     header, *body = rows
-    out = []
+    out, matched = [], False
     for row in body:
+        if len(row) != len(header):
+            raise ValueError(f"data_clinical_sample.txt: row has {len(row)} cells, header has {len(header)}")
         rec = dict(zip(header, row))
         if rec["SAMPLE_ID"] != ids["sampleId"]:
             continue
+        matched = True
         for attr, value in rec.items():
             if attr.startswith("HLA_") and value != "NA":
                 out.append(
@@ -80,6 +86,8 @@ def clinical_rows(frag, ids):
                         "uniquePatientKey": "",
                     }
                 )
+    if not matched:
+        raise ValueError(f"data_clinical_sample.txt: no row for sample {ids['sampleId']!r}")
     return out
 
 
@@ -97,6 +105,10 @@ def build_fixture(frag, study_id, sample_id, patient_id):
             if row["stableId"] not in seen:
                 seen.add(row["stableId"])
                 metas.append(row)
+    if not metas:
+        raise ValueError(f"no GENERIC_ASSAY meta files found in {frag}")
+    if not data:
+        raise ValueError(f"no data rows for sample {sample_id!r} in {frag}")
     return {
         "studyId": study_id,
         "sampleId": sample_id,

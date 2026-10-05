@@ -1,3 +1,4 @@
+import pytest
 import importlib.util
 from pathlib import Path
 
@@ -78,3 +79,44 @@ def test_build_fixture(tmp_path):
             "uniquePatientKey": "",
         }
     ]
+
+
+def _build(d, sample="S1"):
+    return _load().build_fixture(d, "study", sample, "P1")
+
+
+def test_zero_generic_assay_metas_raises(tmp_path):
+    _write_fragment(tmp_path)
+    (tmp_path / "meta_prof_a.txt").unlink()
+    with pytest.raises(ValueError, match="no GENERIC_ASSAY"):
+        _build(tmp_path)
+
+
+def test_absent_sample_id_raises(tmp_path):
+    _write_fragment(tmp_path)
+    with pytest.raises(ValueError, match="'NOPE'"):
+        _build(tmp_path, "NOPE")
+
+
+def test_absent_property_column_raises(tmp_path):
+    _write_fragment(tmp_path)
+    meta = tmp_path / "meta_prof_a.txt"
+    meta.write_text(meta.read_text().replace("NAME,GENE", "NAME,GENE,MISSING"))
+    with pytest.raises(ValueError, match="MISSING"):
+        _build(tmp_path)
+
+
+def test_absent_clinical_row_raises(tmp_path):
+    _write_fragment(tmp_path)
+    clin = tmp_path / "data_clinical_sample.txt"
+    clin.write_text(clin.read_text().replace("P1\tS1", "P1\tOTHER"))
+    with pytest.raises(ValueError, match="no row for sample"):
+        _build(tmp_path)
+
+
+def test_all_na_sample_raises(tmp_path):
+    _write_fragment(tmp_path)
+    d = tmp_path / "data_prof_a.txt"
+    d.write_text(d.read_text().replace("\t3\n", "\tNA\n"))
+    with pytest.raises(ValueError, match="no data rows"):
+        _build(tmp_path)
