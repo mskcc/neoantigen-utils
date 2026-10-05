@@ -474,3 +474,23 @@ def test_neoantigen_clone_profiles_only_written_for_trees_present(tmp_path):
     assert (out / "meta_neoantigen_clone_t1.txt").exists()
     assert not (out / "meta_neoantigen_clone_t2.txt").exists()
     assert not (out / "data_neoantigen_clone_t2.txt").exists()
+
+
+def _cells(out, filename, entity):
+    lines = (out / filename).read_text().splitlines()
+    header = lines[0].split("\t")
+    row = next(l.split("\t") for l in lines[1:] if l.startswith(entity + "\t"))
+    return dict(zip(header, row))
+
+
+def test_mutation_profiles_cover_listed_and_assigned_mutations(tmp_path):
+    sample = _write_sample(tmp_path)
+    sample["mutation_clones"].append({"sample_id": "SAMPLE_1", "tree_idx": 1, "mutation_id": "9_9_A_T", "clone_id": 1})
+    out = tmp_path / "out"
+    build_study([sample], "study_1", str(out))
+    listed = _cells(out, "data_mutation_detected.txt", "1_100_C_G")
+    assert listed["SAMPLE_1"] == "1" and listed["GENE"] == "TP53" and listed["VARIANT_TYPE"] == "SNP"
+    assert _cells(out, "data_mutation_detected.txt", "9_9_A_T")["SAMPLE_1"] == "NA"
+    assert _cells(out, "data_mutation_clone_t1.txt", "9_9_A_T")["SAMPLE_1"] == "1"
+    meta = (out / "meta_mutation_detected.txt").read_text()
+    assert "generic_assay_type: MUTATION" in meta and "show_profile_in_analysis_tab: false" in meta

@@ -6,6 +6,8 @@ bounded; neoantigen entities are keyed on peptide plus HLA so recurrent
 neoantigens dedupe across samples.
 """
 
+import re
+
 META_TEMPLATE = """cancer_study_identifier: {study_id}
 genetic_alteration_type: GENERIC_ASSAY
 generic_assay_type: {assay_type}
@@ -19,6 +21,34 @@ value_sort_order: {value_sort_order}
 patient_level: {patient_level}
 generic_entity_meta_properties: {meta_properties}
 """
+
+
+_SNV_RE = re.compile(r"^([0-9A-Za-z]+)_(\d+)_([ACGTN]+)_([ACGTN]+)$")
+_DEL_RE = re.compile(r"^([0-9A-Za-z]+)_(\d+)_([ACGTN]+)_D$")
+_INS_RE = re.compile(r"^([0-9A-Za-z]+)_(\d+)_I_([ACGTN]+)$")
+_MNV_TYPES = {1: "SNP", 2: "DNP", 3: "TNP"}
+
+
+def parse_mutation_id(mutation_id):
+    """Pipeline mutation id (generate_input.py) -> cBioPortal mutation coordinates."""
+    for pattern, kind in ((_DEL_RE, "DEL"), (_INS_RE, "INS"), (_SNV_RE, "SNV")):
+        match = pattern.match(mutation_id)
+        if not match:
+            continue
+        chrom, start = match.group(1), match.group(2)
+        if kind == "DEL":
+            return {"CHR": chrom, "START": start, "REF": match.group(3), "ALT": "-", "VARIANT_TYPE": "DEL"}
+        if kind == "INS":
+            return {"CHR": chrom, "START": start, "REF": "-", "ALT": match.group(3), "VARIANT_TYPE": "INS"}
+        ref, alt = match.group(3), match.group(4)
+        return {
+            "CHR": chrom,
+            "START": start,
+            "REF": ref,
+            "ALT": alt,
+            "VARIANT_TYPE": _MNV_TYPES.get(len(ref), "ONP"),
+        }
+    raise ValueError("unrecognised mutation id {!r}".format(mutation_id))
 
 
 def neoantigen_entity_id(row):

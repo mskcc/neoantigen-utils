@@ -1,6 +1,9 @@
+import pytest
+
 from neoantigen_utils.cbioportal_generic_assay import (
     clone_entity_id,
     neoantigen_entity_id,
+    parse_mutation_id,
     render_data,
     render_meta,
 )
@@ -102,3 +105,20 @@ def test_render_data_pivots_entities_by_sample():
     assert lines[0] == "ENTITY_STABLE_ID\tNAME\tDESCRIPTION\tSAMPLE_1\tSAMPLE_2"
     assert lines[1] == "E1\tpeptide1\td1\t0.5\tNA"
     assert lines[2] == "E2\tpeptide2\td2\tNA\t1.25"
+
+
+@pytest.mark.parametrize("mutation_id, expected", [
+    ("1_100_C_G", {"CHR": "1", "START": "100", "REF": "C", "ALT": "G", "VARIANT_TYPE": "SNP"}),
+    ("1_100_CA_GT", {"CHR": "1", "START": "100", "REF": "CA", "ALT": "GT", "VARIANT_TYPE": "DNP"}),
+    ("2_200_AT_D", {"CHR": "2", "START": "200", "REF": "AT", "ALT": "-", "VARIANT_TYPE": "DEL"}),
+    ("3_300_I_GG", {"CHR": "3", "START": "300", "REF": "-", "ALT": "GG", "VARIANT_TYPE": "INS"}),
+    ("MT_5_A_T", {"CHR": "MT", "START": "5", "REF": "A", "ALT": "T", "VARIANT_TYPE": "SNP"}),
+])
+def test_parse_mutation_id_gives_cbioportal_coordinates(mutation_id, expected):
+    assert parse_mutation_id(mutation_id) == expected
+
+
+@pytest.mark.parametrize("bad", ["1_100_C", "1_x_C_G", "chr1-100-C-G"])
+def test_parse_mutation_id_rejects_other_shapes(bad):
+    with pytest.raises(ValueError):
+        parse_mutation_id(bad)

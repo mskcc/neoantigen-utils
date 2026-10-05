@@ -198,3 +198,27 @@ CLONE_PROFILES = [
     ("clone_fitness", "F_I", "Clone fitness", "Clone fitness from NeoantigenEditing."),
     ("clone_f_p", "F_P", "Clone F_P", "F_P from NeoantigenEditing; integer, not a flag."),
 ]
+
+MUTATION_META_PROPERTIES = (
+    "NAME",
+    "DESCRIPTION",
+    "GENE",
+    "MISSENSE",
+    "CHR",
+    "START",
+    "REF",
+    "ALT",
+    "VARIANT_TYPE",
+)
+
+MUTATION_DETECTED_PROFILE = (
+    "mutation_detected",
+    "Mutation in pipeline input",
+    "1 for each mutation listed in the sample's mutations[].",
+)
+
+MUTATION_CLONE_PROFILE = (
+    "mutation_clone",
+    "Mutation clone",
+    "Clone carrying the mutation in this candidate tree; NA if unassigned.",
+)

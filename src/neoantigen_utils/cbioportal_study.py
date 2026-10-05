@@ -28,6 +28,7 @@ from neoantigen_utils.cbioportal_generic_assay import (
 from neoantigen_utils.cbioportal_study_profiles import (
     _neoantigen_entities,
     _write,
+    _write_mutation_profiles,
     _write_neoantigen_clone_profiles,
 )
 from neoantigen_utils.cbioportal_study_tables import (
@@ -320,6 +321,7 @@ def build_study(samples, study_id, outdir):
 
     _write_neoantigen_profiles(samples, sample_ids, study_id, outdir)
     _write_neoantigen_clone_profiles(samples, sample_ids, study_id, outdir)
+    _write_mutation_profiles(samples, sample_ids, study_id, outdir)
     _write_clone_profiles(samples, sample_ids, study_id, outdir)
     _write_tree_score_profile(samples, sample_ids, study_id, outdir)
     write_tidy_tables(samples, outdir)
