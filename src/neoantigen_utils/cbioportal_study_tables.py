@@ -96,6 +96,12 @@ NEOANTIGEN_META_PROPERTIES = (
     "NAME", "DESCRIPTION", "GENE", "MUTATION_ID", "SEQUENCE", "WT_SEQUENCE", "HLA", "MUTATED_POSITION",
 )
 
+NEOANTIGEN_CLONE_PROFILE = (
+    "neoantigen_clone",
+    "Neoantigen clone",
+    "Clone carrying the neoantigen's mutation in this candidate tree; NA if unassigned.",
+)
+
 # Trailing field is value_sort_order. Kd and KdWT are affinities in nM where
 # LOWER is the stronger binder, so they sort ASC; DESC there would rank the
 # weakest binders as most important in the waterfall plot and OncoPrint tooltip.

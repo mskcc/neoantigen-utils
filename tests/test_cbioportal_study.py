@@ -442,3 +442,35 @@ def test_neoantigen_profiles_carry_structured_properties(tmp_path):
     assert cells["GENE"] == "TP53" and cells["MUTATION_ID"] == "1_100_C_G"
     assert cells["SEQUENCE"] == "ALLAAVLAA" and cells["WT_SEQUENCE"] == "ALLAALLAA"
     assert cells["HLA"] == "A*02:01" and cells["MUTATED_POSITION"] == "6"
+
+
+def _neo_clone_cells(out, tree):
+    header, row = (out / "data_neoantigen_clone_t{}.txt".format(tree)).read_text().splitlines()[:2]
+    return dict(zip(header.split("\t"), row.split("\t")))
+
+
+def test_neoantigen_clone_profile_maps_each_neoantigen_to_its_clone(tmp_path):
+    sample = _write_sample(tmp_path)
+    out = tmp_path / "out"
+    build_study([sample], "study_1", str(out))
+    assert _neo_clone_cells(out, 1)["SAMPLE_1"] == "1"
+    meta = (out / "meta_neoantigen_clone_t1.txt").read_text()
+    assert "show_profile_in_analysis_tab: false" in meta and "generic_assay_type: NEOANTIGEN" in meta
+    assert "datatype: LIMIT-VALUE" in meta
+
+
+def test_neoantigen_on_an_unassigned_mutation_gets_na(tmp_path):
+    sample = _write_sample(tmp_path)
+    sample["mutation_clones"] = []
+    out = tmp_path / "out"
+    build_study([sample], "study_1", str(out))
+    assert _neo_clone_cells(out, 1)["SAMPLE_1"] == "NA"
+
+
+def test_neoantigen_clone_profiles_only_written_for_trees_present(tmp_path):
+    sample = _write_sample(tmp_path)
+    out = tmp_path / "out"
+    build_study([sample], "study_1", str(out))
+    assert (out / "meta_neoantigen_clone_t1.txt").exists()
+    assert not (out / "meta_neoantigen_clone_t2.txt").exists()
+    assert not (out / "data_neoantigen_clone_t2.txt").exists()

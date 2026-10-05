@@ -25,6 +25,11 @@ from neoantigen_utils.cbioportal_generic_assay import (
     render_data,
     render_meta,
 )
+from neoantigen_utils.cbioportal_study_profiles import (
+    _neoantigen_entities,
+    _write,
+    _write_neoantigen_clone_profiles,
+)
 from neoantigen_utils.cbioportal_study_tables import (
     CLINICAL_ATTRIBUTES,
     CLONE_PROFILES,
@@ -72,13 +77,6 @@ def load_sample(sample_id, patient_id, annotated_path, tree_path):
     }
 
 
-def _write(outdir, filename, text):
-    path = os.path.join(outdir, filename)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as handle:
-        handle.write(text)
-
-
 def _render_clinical(samples):
     names = [a[0] for a in CLINICAL_ATTRIBUTES]
     lines = [
@@ -91,34 +89,6 @@ def _render_clinical(samples):
     for sample in samples:
         lines.append("\t".join(str(sample["summary"].get(n, "NA")) for n in names))
     return "\n".join(lines) + "\n"
-
-
-def _neoantigen_entities(samples):
-    entities = {}
-    for sample in samples:
-        for row in sample["neoantigens"]:
-            entity_id = neoantigen_entity_id(row)
-            entities.setdefault(
-                entity_id,
-                {
-                    "ENTITY_STABLE_ID": entity_id,
-                    "NAME": row["sequence"],
-                    "DESCRIPTION": "{} | {} | {} | WT {} | pos {}".format(
-                        row["HLA_gene_id"],
-                        row["gene"],
-                        row["mutation_id"],
-                        row["WT_sequence"],
-                        row["mutated_position"],
-                    ),
-                    "GENE": row["gene"],
-                    "MUTATION_ID": row["mutation_id"],
-                    "SEQUENCE": row["sequence"],
-                    "WT_SEQUENCE": row["WT_sequence"],
-                    "HLA": hla_alleles({"HLA_genes": [row["HLA_gene_id"]]})[0],
-                    "MUTATED_POSITION": str(row["mutated_position"]),
-                },
-            )
-    return [entities[k] for k in sorted(entities)]
 
 
 def _write_neoantigen_profiles(samples, sample_ids, study_id, outdir):
@@ -349,6 +319,7 @@ def build_study(samples, study_id, outdir):
     )
 
     _write_neoantigen_profiles(samples, sample_ids, study_id, outdir)
+    _write_neoantigen_clone_profiles(samples, sample_ids, study_id, outdir)
     _write_clone_profiles(samples, sample_ids, study_id, outdir)
     _write_tree_score_profile(samples, sample_ids, study_id, outdir)
     write_tidy_tables(samples, outdir)
