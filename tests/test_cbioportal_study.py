@@ -523,3 +523,30 @@ def test_clinical_file_carries_hla_columns(tmp_path):
     lines = (out / "data_clinical_sample.txt").read_text().splitlines()
     row = dict(zip(lines[4].split("\t"), lines[5].split("\t")))
     assert row["HLA_A_1"] == "A*02:01" and row["HLA_A_2"] == "A*03:01" and row["HLA_B_1"] == "NA"
+
+
+def test_build_study_assigns_clone_to_remapped_del_neoantigen(tmp_path):
+    annotated = copy.deepcopy(ANNOTATED)
+    annotated["mutations"] = [{"id": "1_100_CA_D", "gene": "TP53", "missense": 0}]
+    annotated["neoantigens"][0]["mutation_id"] = "1_99_CA_D"
+    tree = copy.deepcopy(TREE)
+    tree["sample_trees"][0]["topology"]["children"][0]["clone_mutations"] = ["1_100_CA_D"]
+    (tmp_path / "a.json").write_text(json.dumps(annotated))
+    (tmp_path / "t.json").write_text(json.dumps(tree))
+    sample = load_sample("SAMPLE_1", "PATIENT_1", str(tmp_path / "a.json"), str(tmp_path / "t.json"))
+    out = tmp_path / "study"
+    build_study([sample], "study_1", str(out))
+
+    data = (out / "data_neoantigen_clone_t1.txt").read_text()
+    row = next(line for line in data.strip().split("\n") if line.startswith("TP53_1_100_CA_D_"))
+    assert row.split("\t")[-1] == "1"
+
+
+def test_load_sample_reports_remapped_del_ids(tmp_path, capsys):
+    annotated = copy.deepcopy(ANNOTATED)
+    annotated["mutations"] = [{"id": "1_100_CA_D", "gene": "TP53", "missense": 0}]
+    annotated["neoantigens"][0]["mutation_id"] = "1_99_CA_D"
+    (tmp_path / "a.json").write_text(json.dumps(annotated))
+    (tmp_path / "t.json").write_text(json.dumps(TREE))
+    load_sample("SAMPLE_1", "PATIENT_1", str(tmp_path / "a.json"), str(tmp_path / "t.json"))
+    assert "sample SAMPLE_1: remapped 1 DEL neoantigen mutation ids by +1 to match mutations[]" in capsys.readouterr().err

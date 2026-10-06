@@ -181,6 +181,7 @@ TIDY_TABLES = [
             "logC",
             "logA",
             "quality",
+            "mutation_id_raw",
         ],
     ),
     ("mutation_clones.tsv", "mutation_clones", ["sample_id", "tree_idx", "mutation_id", "clone_id"]),

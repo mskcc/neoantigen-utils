@@ -153,18 +153,44 @@ def flatten_tree_scores(data, sample_id):
     ]
 
 
+_DEL_ID_RE = re.compile(r"^(.+)_(\d+)_(.+)_D$")
+
+
+def _shifted_del_id(mutation_id):
+    """The DEL id with its position moved +1, or None if `mutation_id` is not a DEL id."""
+    match = _DEL_ID_RE.match(mutation_id or "")
+    if not match:
+        return None
+    return "{}_{}_{}_D".format(match.group(1), int(match.group(2)) + 1, match.group(3))
+
+
 def flatten_neoantigens(data, sample_id):
-    """Return one row per neoantigen, with the gene joined in from `mutations`."""
+    """Return one row per neoantigen, with the gene joined in from `mutations`.
+
+    Upstream generate_input.py names a deletion `{chr}_{Start_Position}_{ref}_D` in
+    `mutations[]` but `{chr}_{Start_Position-1}_{ref}_D` in the neoantigen records.
+    A DEL neoantigen id missing from `mutations[]` whose +1 shift is present is
+    remapped to the `mutations[]` id; the original is kept as `mutation_id_raw`.
+    """
     genes = {m["id"]: m.get("gene", "") for m in data.get("mutations", [])}
     rows = []
     for neoantigen in data.get("neoantigens", []):
+        raw_id = neoantigen.get("mutation_id")
+        mutation_id = raw_id
+        if raw_id not in genes:
+            shifted = _shifted_del_id(raw_id)
+            if shifted in genes:
+                mutation_id = shifted
         row = {
             "sample_id": sample_id,
             "neoantigen_id": neoantigen["id"],
-            "gene": genes.get(neoantigen.get("mutation_id"), ""),
+            "gene": genes.get(mutation_id, ""),
         }
         for field in NEOANTIGEN_FIELDS:
             row[field] = neoantigen.get(field)
+        row["mutation_id"] = mutation_id
+        row["mutation_id_raw"] = raw_id
+        row["mutation_id_remapped"] = mutation_id != raw_id
         rows.append(row)
     return rows
 

@@ -8,6 +8,7 @@ supplies. See `build_study`.
 
 import json
 import os
+import sys
 
 from neoantigen_utils.cbioportal_flatten import (
     flatten_mutation_clones,
@@ -59,6 +60,12 @@ def load_sample(sample_id, patient_id, annotated_path, tree_path):
     validate_tree_nodes(nodes)
     scores = flatten_tree_scores(annotated, sample_id)
     neoantigens = flatten_neoantigens(annotated, sample_id)
+    remapped = sum(row["mutation_id_remapped"] for row in neoantigens)
+    if remapped:
+        print(
+            "sample {}: remapped {} DEL neoantigen mutation ids by +1 to match mutations[]".format(sample_id, remapped),
+            file=sys.stderr,
+        )
     mutation_clones = flatten_mutation_clones(tree_data, sample_id)
     return {
         "sample_id": sample_id,

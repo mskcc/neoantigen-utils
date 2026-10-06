@@ -1,3 +1,5 @@
+import copy
+
 import pytest
 
 from neoantigen_utils.cbioportal_flatten import (
@@ -433,3 +435,42 @@ def test_hla_alleles_strips_surrounding_whitespace():
 def test_hla_alleles_rejects_only_whitespace():
     with pytest.raises(FlattenError, match="HLA"):
         hla_alleles({"HLA_genes": ["   "]})
+
+
+def _del_data(neoantigen_mutation_id, mutations_ids):
+    data = copy.deepcopy(ANNOTATED)
+    data["mutations"] = [{"id": i, "gene": "TP53", "missense": 0} for i in mutations_ids]
+    data["neoantigens"][0]["mutation_id"] = neoantigen_mutation_id
+    return data
+
+
+def test_flatten_neoantigens_remaps_del_id_off_by_one():
+    data = _del_data("1_99_CA_D", ["1_100_CA_D"])
+    row = flatten_neoantigens(data, "SAMPLE_1")[0]
+    assert row["mutation_id"] == "1_100_CA_D"
+    assert row["mutation_id_raw"] == "1_99_CA_D"
+    assert row["mutation_id_remapped"] is True
+    assert row["gene"] == "TP53"
+
+
+def test_flatten_neoantigens_leaves_del_untouched_when_shifted_id_absent():
+    data = _del_data("1_99_CA_D", ["1_500_CA_D"])
+    row = flatten_neoantigens(data, "SAMPLE_1")[0]
+    assert row["mutation_id"] == "1_99_CA_D"
+    assert row["mutation_id_remapped"] is False
+    assert row["gene"] == ""
+
+
+def test_flatten_neoantigens_leaves_absent_snv_untouched():
+    data = _del_data("1_99_C_G", ["1_100_C_G"])
+    row = flatten_neoantigens(data, "SAMPLE_1")[0]
+    assert row["mutation_id"] == "1_99_C_G"
+    assert row["mutation_id_remapped"] is False
+    assert row["gene"] == ""
+
+
+def test_flatten_neoantigens_leaves_present_del_untouched():
+    data = _del_data("1_99_CA_D", ["1_99_CA_D", "1_100_CA_D"])
+    row = flatten_neoantigens(data, "SAMPLE_1")[0]
+    assert row["mutation_id"] == "1_99_CA_D"
+    assert row["mutation_id_remapped"] is False
