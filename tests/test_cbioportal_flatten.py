@@ -420,3 +420,16 @@ def test_flatten_mutations_rejects_mutation_lacking_id():
     data = {"mutations": [{"gene": "TP53", "missense": 1}]}
     with pytest.raises(FlattenError, match="sample SAMPLE_1"):
         flatten_mutations(data, "SAMPLE_1")
+
+
+def test_hla_alleles_strips_trailing_newline():
+    assert hla_alleles({"HLA_genes": ["C*05:261\n"]}) == ["C*05:261"]
+
+
+def test_hla_alleles_strips_surrounding_whitespace():
+    assert hla_alleles({"HLA_genes": ["  A*02:01 "]}) == ["A*02:01"]
+
+
+def test_hla_alleles_rejects_only_whitespace():
+    with pytest.raises(FlattenError, match="HLA"):
+        hla_alleles({"HLA_genes": ["   "]})

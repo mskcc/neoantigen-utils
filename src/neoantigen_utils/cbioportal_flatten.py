@@ -48,7 +48,10 @@ def hla_alleles(data):
     for raw in data["HLA_genes"]:
         if not isinstance(raw, str):
             raise FlattenError("unparseable HLA allele {!r}".format(raw))
-        match = _HLA_RE.fullmatch(raw)
+        stripped = raw.strip()
+        if not stripped:
+            raise FlattenError("unparseable HLA allele {!r}".format(raw))
+        match = _HLA_RE.fullmatch(stripped)
         if not match:
             raise FlattenError("unparseable HLA allele {!r}".format(raw))
         alleles.append("{}*{}:{}".format(*match.groups()))
