@@ -274,3 +274,35 @@ def test_missing_protein_consequence_returns_minus1(monkeypatch):
     monkeypatch.setattr(gmf, "normalize", lambda q: {"warnings": []})
     mut = gmf.mutation(_primary_row("c.640G>T"))
     assert mut.generate_translated_sequences(10) == -1
+
+
+# ---------------------------------------------------------------------------
+# stop codons: mutalyzer keeps the terminal '*' in both the reference protein
+# and the predicted protein ("up to and including the first '*'"). 1.4.0's own
+# translator stopped *before* the stop codon, so windows never carried '*'.
+# A '*' that reaches netMHCpan comes back as 'X' and crashes BLOSUM62 scoring
+# in align_neoantigens_to_IEDB.py (KeyError: ('V', 'X')).
+# ---------------------------------------------------------------------------
+
+
+def test_windows_strip_terminal_stop_near_c_terminus():
+    wt, mt = gmf.extract_altered_windows("MPQKSTV*", "MPQRSTV*", 10)
+    assert "*" not in wt and "*" not in mt
+    assert (wt, mt) == gmf.extract_altered_windows("MPQKSTV", "MPQRSTV", 10)
+
+
+def test_windows_strip_stop_gained():
+    # Nonsense: predicted protein is truncated at the new stop, '*' included.
+    wt, mt = gmf.extract_altered_windows("MPQKSTVLAG*", "MPQ*", 10)
+    assert "*" not in wt and "*" not in mt
+
+
+def test_translated_sequences_have_no_stop(monkeypatch):
+    monkeypatch.setattr(
+        gmf,
+        "normalize",
+        lambda q: {"protein": {"predicted": "MPQRS*", "reference": "MPQKS*"}},
+    )
+    mut = gmf.mutation(_primary_row("c.640G>T"))
+    mut.generate_translated_sequences(10)
+    assert "*" not in mut.wt_altered_aa and "*" not in mut.mt_altered_aa

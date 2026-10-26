@@ -756,6 +756,13 @@ class mutation(object):
 # peptides around the altered region. Shared by the annotated path and the
 # multi-transcript alt path so both apply identical windowing.
 def extract_altered_windows(wt, mt, pad_len):
+    ### mutalyzer keeps the terminal '*' (reference: full-CDS translation; predicted:
+    ### "up to and including the first '*'"). Cut at the first stop, as 1.4.0's own
+    ### translator did, so no window peptide spans a stop codon (netMHCpan would
+    ### emit it as 'X', which align_neoantigens_to_IEDB.py cannot score).
+    wt = wt.split("*", 1)[0]
+    mt = mt.split("*", 1)[0]
+
     ### identify regions of mutation in WT and MT sequences.
     ### logic is to match the wt and mt sequences first from the beginning until a mismatch is found; and, then,
     ### start from the end of both sequences until a mismatch is found. the intervening sequence represents the WT and MT sequences
