@@ -760,8 +760,10 @@ def extract_altered_windows(wt, mt, pad_len):
     ### "up to and including the first '*'"). Cut at the first stop, as 1.4.0's own
     ### translator did, so no window peptide spans a stop codon (netMHCpan would
     ### emit it as 'X', which align_neoantigens_to_IEDB.py cannot score).
-    wt = wt.split("*", 1)[0]
-    mt = mt.split("*", 1)[0]
+    ### Also cut at the first 'X' (unknown residue): frameshifts running off an
+    ### incomplete transcript end carry a trailing 'X' straight into the FASTA.
+    wt = wt.split("*", 1)[0].split("X", 1)[0]
+    mt = mt.split("*", 1)[0].split("X", 1)[0]
 
     ### identify regions of mutation in WT and MT sequences.
     ### logic is to match the wt and mt sequences first from the beginning until a mismatch is found; and, then,

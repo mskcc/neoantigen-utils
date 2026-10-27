@@ -306,3 +306,25 @@ def test_translated_sequences_have_no_stop(monkeypatch):
     mut = gmf.mutation(_primary_row("c.640G>T"))
     mut.generate_translated_sequences(10)
     assert "*" not in mut.wt_altered_aa and "*" not in mut.mt_altered_aa
+
+
+# 'X' (unknown residue) reaches the FASTA directly on frameshifts that run off an
+# incomplete transcript end; seen as a trailing 'X' in real 1.6.1 output. Same
+# KeyError in align_neoantigens_to_IEDB.py, so windows are cut at the first 'X' too.
+
+
+def test_windows_strip_terminal_unknown_residue_frameshift():
+    wt, mt = gmf.extract_altered_windows("MPQKSTVLAGX", "MPQRWLKKDRILAX", 10)
+    assert "X" not in wt and "X" not in mt
+    assert (wt, mt) == gmf.extract_altered_windows("MPQKSTVLAG", "MPQRWLKKDRILA", 10)
+
+
+def test_translated_sequences_have_no_unknown_residue(monkeypatch):
+    monkeypatch.setattr(
+        gmf,
+        "normalize",
+        lambda q: {"protein": {"predicted": "MPQRWLKKDRILAX", "reference": "MPQKSTVLAGX"}},
+    )
+    mut = gmf.mutation(_primary_row("c.640G>T"))
+    mut.generate_translated_sequences(10)
+    assert "X" not in mut.wt_altered_aa and "X" not in mut.mt_altered_aa
