@@ -3,6 +3,7 @@
 import os
 import sys
 import argparse
+import collections
 import traceback
 import pandas as pd
 import logging
@@ -225,6 +226,19 @@ def main():
             + ")"
         )
         logger.info("\t\t# skipped due to errors: " + str(n_errored))
+        logger.info(
+            "\t\t# sequences cut at 'X': trailing "
+            + str(X_CUT_COUNTS["trailing"])
+            + ", internal "
+            + str(X_CUT_COUNTS["internal"])
+            + " (residues discarded: "
+            + str(X_CUT_COUNTS["internal_residues_lost"])
+            + ")"
+        )
+        if X_CUT_COUNTS["internal"]:
+            logger.warning(
+                "Internal 'X' found: epitopes downstream of it were discarded"
+            )
         if multi_transcript:
             logger.info("\tMulti-transcript summary")
             logger.info("\t\t# transcript_map rows: " + str(len(map_rows)))
@@ -752,6 +766,23 @@ class mutation(object):
         )
 
 
+# Per-run tally of 'X' cuts (WT and MT counted alike), reported in main()'s summary.
+# "trailing": X was the last residue (partial final codon), nothing lost.
+# "internal": residues after the X were discarded; count kept in internal_residues_lost.
+X_CUT_COUNTS = collections.Counter()
+
+
+def _cut_at_x(seq):
+    head, sep, tail = seq.partition("X")
+    if sep:
+        if tail:
+            X_CUT_COUNTS["internal"] += 1
+            X_CUT_COUNTS["internal_residues_lost"] += len(tail)
+        else:
+            X_CUT_COUNTS["trailing"] += 1
+    return head
+
+
 # function that, given full WT and MT protein sequences, extracts the ± window
 # peptides around the altered region. Shared by the annotated path and the
 # multi-transcript alt path so both apply identical windowing.
@@ -762,8 +793,8 @@ def extract_altered_windows(wt, mt, pad_len):
     ### emit it as 'X', which align_neoantigens_to_IEDB.py cannot score).
     ### Also cut at the first 'X' (unknown residue): frameshifts running off an
     ### incomplete transcript end carry a trailing 'X' straight into the FASTA.
-    wt = wt.split("*", 1)[0].split("X", 1)[0]
-    mt = mt.split("*", 1)[0].split("X", 1)[0]
+    wt = _cut_at_x(wt.split("*", 1)[0])
+    mt = _cut_at_x(mt.split("*", 1)[0])
 
     ### identify regions of mutation in WT and MT sequences.
     ### logic is to match the wt and mt sequences first from the beginning until a mismatch is found; and, then,

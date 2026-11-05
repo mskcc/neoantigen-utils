@@ -328,3 +328,29 @@ def test_translated_sequences_have_no_unknown_residue(monkeypatch):
     mut = gmf.mutation(_primary_row("c.640G>T"))
     mut.generate_translated_sequences(10)
     assert "X" not in mut.wt_altered_aa and "X" not in mut.mt_altered_aa
+
+
+# Cuts at 'X' must be counted, not silent: trailing (partial final codon) vs
+# internal (would discard everything downstream of the 'X').
+
+
+def test_x_cut_counts_trailing_partial_codon_frameshift():
+    gmf.X_CUT_COUNTS.clear()
+    wt, mt = gmf.extract_altered_windows("MPQKSTVLAG*", "MPQRWLKKDRILAX", 10)
+    assert "X" not in wt and "X" not in mt
+    assert gmf.X_CUT_COUNTS["trailing"] == 1
+    assert gmf.X_CUT_COUNTS["internal"] == 0
+
+
+def test_x_cut_counts_internal_x_and_residues_lost():
+    gmf.X_CUT_COUNTS.clear()
+    gmf.extract_altered_windows("MPQKSTVLAG*", "MPQRWXKKDR*", 10)
+    assert gmf.X_CUT_COUNTS["internal"] == 1
+    assert gmf.X_CUT_COUNTS["internal_residues_lost"] == 4  # "KKDR"
+    assert gmf.X_CUT_COUNTS["trailing"] == 0
+
+
+def test_no_x_no_count():
+    gmf.X_CUT_COUNTS.clear()
+    gmf.extract_altered_windows("MPQKSTV*", "MPQRSTV*", 10)
+    assert sum(gmf.X_CUT_COUNTS.values()) == 0
