@@ -274,3 +274,83 @@ def test_missing_protein_consequence_returns_minus1(monkeypatch):
     monkeypatch.setattr(gmf, "normalize", lambda q: {"warnings": []})
     mut = gmf.mutation(_primary_row("c.640G>T"))
     assert mut.generate_translated_sequences(10) == -1
+
+
+# ---------------------------------------------------------------------------
+# stop codons: mutalyzer keeps the terminal '*' in both the reference protein
+# and the predicted protein ("up to and including the first '*'"). 1.4.0's own
+# translator stopped *before* the stop codon, so windows never carried '*'.
+# A '*' that reaches netMHCpan comes back as 'X' and crashes BLOSUM62 scoring
+# in align_neoantigens_to_IEDB.py (KeyError: ('V', 'X')).
+# ---------------------------------------------------------------------------
+
+
+def test_windows_strip_terminal_stop_near_c_terminus():
+    wt, mt = gmf.extract_altered_windows("MPQKSTV*", "MPQRSTV*", 10)
+    assert "*" not in wt and "*" not in mt
+    assert (wt, mt) == gmf.extract_altered_windows("MPQKSTV", "MPQRSTV", 10)
+
+
+def test_windows_strip_stop_gained():
+    # Nonsense: predicted protein is truncated at the new stop, '*' included.
+    wt, mt = gmf.extract_altered_windows("MPQKSTVLAG*", "MPQ*", 10)
+    assert "*" not in wt and "*" not in mt
+
+
+def test_translated_sequences_have_no_stop(monkeypatch):
+    monkeypatch.setattr(
+        gmf,
+        "normalize",
+        lambda q: {"protein": {"predicted": "MPQRS*", "reference": "MPQKS*"}},
+    )
+    mut = gmf.mutation(_primary_row("c.640G>T"))
+    mut.generate_translated_sequences(10)
+    assert "*" not in mut.wt_altered_aa and "*" not in mut.mt_altered_aa
+
+
+# 'X' (unknown residue) reaches the FASTA directly on frameshifts that run off an
+# incomplete transcript end; seen as a trailing 'X' in real 1.6.1 output. Same
+# KeyError in align_neoantigens_to_IEDB.py, so windows are cut at the first 'X' too.
+
+
+def test_windows_strip_terminal_unknown_residue_frameshift():
+    wt, mt = gmf.extract_altered_windows("MPQKSTVLAGX", "MPQRWLKKDRILAX", 10)
+    assert "X" not in wt and "X" not in mt
+    assert (wt, mt) == gmf.extract_altered_windows("MPQKSTVLAG", "MPQRWLKKDRILA", 10)
+
+
+def test_translated_sequences_have_no_unknown_residue(monkeypatch):
+    monkeypatch.setattr(
+        gmf,
+        "normalize",
+        lambda q: {"protein": {"predicted": "MPQRWLKKDRILAX", "reference": "MPQKSTVLAGX"}},
+    )
+    mut = gmf.mutation(_primary_row("c.640G>T"))
+    mut.generate_translated_sequences(10)
+    assert "X" not in mut.wt_altered_aa and "X" not in mut.mt_altered_aa
+
+
+# Cuts at 'X' must be counted, not silent: trailing (partial final codon) vs
+# internal (would discard everything downstream of the 'X').
+
+
+def test_x_cut_counts_trailing_partial_codon_frameshift():
+    gmf.X_CUT_COUNTS.clear()
+    wt, mt = gmf.extract_altered_windows("MPQKSTVLAG*", "MPQRWLKKDRILAX", 10)
+    assert "X" not in wt and "X" not in mt
+    assert gmf.X_CUT_COUNTS["trailing"] == 1
+    assert gmf.X_CUT_COUNTS["internal"] == 0
+
+
+def test_x_cut_counts_internal_x_and_residues_lost():
+    gmf.X_CUT_COUNTS.clear()
+    gmf.extract_altered_windows("MPQKSTVLAG*", "MPQRWXKKDR*", 10)
+    assert gmf.X_CUT_COUNTS["internal"] == 1
+    assert gmf.X_CUT_COUNTS["internal_residues_lost"] == 4  # "KKDR"
+    assert gmf.X_CUT_COUNTS["trailing"] == 0
+
+
+def test_no_x_no_count():
+    gmf.X_CUT_COUNTS.clear()
+    gmf.extract_altered_windows("MPQKSTV*", "MPQRSTV*", 10)
+    assert sum(gmf.X_CUT_COUNTS.values()) == 0

@@ -20,7 +20,7 @@ import argparse
 import re
 import sys
 
-VERSION = "1.6.1"
+VERSION = "1.6.2"
 
 _HLAHD_ALLELE_RE = re.compile(r"^HLA-([A-Za-z0-9]+)\*([0-9]+):([0-9]+)")
 _HLAHD_CLASS_I_LOCI = {"A", "B", "C"}
